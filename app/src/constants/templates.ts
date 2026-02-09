@@ -3,34 +3,31 @@ import { createMockImageDataUri } from '@/lib/mockImage';
 
 export const suiteTemplates: SuiteTemplate[] = [
   {
+    id: 'suite-detail-page',
+    name: '详情页套图',
+    description: '适合电商详情页：主图 + 多角度 + 细节特写 + 场景图。',
+    coverImage:
+      createMockImageDataUri({ title: '详情页套图', subtitle: '套图模版', width: 1200, height: 675 }),
+    availableShotIds: ['front', 'angle45', 'side', 'detail', 'scene', 'in-hand'],
+    defaultShotIds: ['front', 'angle45', 'detail', 'scene'],
+  },
+  {
+    id: 'suite-brand-kv',
+    name: '品牌视觉套图',
+    description: '适合品牌统一风格：质感主图 + KV 场景 + 材质细节。',
+    coverImage:
+      createMockImageDataUri({ title: '品牌视觉套图', subtitle: '套图模版', width: 1200, height: 675 }),
+    availableShotIds: ['front', 'angle45', 'detail', 'scene'],
+    defaultShotIds: ['angle45', 'scene', 'detail'],
+  },
+  {
     id: 'suite-3c-digital',
     name: '3C 数码套图',
     description: '覆盖主图、侧视与使用场景，适合耳机/手表/小家电等。',
     coverImage:
       createMockImageDataUri({ title: '3C 数码套图', subtitle: '套图模版', width: 1200, height: 675 }),
-    items: [
-      {
-        id: 'front',
-        name: '正视主图',
-        promptSuffix:
-          ', product photography, hero shot, centered composition, studio lighting, clean background',
-        referenceWeight: 0.9,
-      },
-      {
-        id: 'side',
-        name: '侧视图',
-        promptSuffix:
-          ', side view, product photography, studio lighting, clean background, sharp details',
-        referenceWeight: 0.85,
-      },
-      {
-        id: 'scene',
-        name: '使用场景',
-        promptSuffix:
-          ', lifestyle scene, natural lighting, realistic environment, shallow depth of field, product in use',
-        referenceWeight: 0.75,
-      },
-    ],
+    availableShotIds: ['front', 'side', 'angle45', 'detail', 'scene', 'in-hand'],
+    defaultShotIds: ['front', 'side', 'scene'],
   },
   {
     id: 'suite-shoes',
@@ -38,35 +35,7 @@ export const suiteTemplates: SuiteTemplate[] = [
     description: '主图 + 侧视 + 细节 + 上脚场景，强调材质与轮廓。',
     coverImage:
       createMockImageDataUri({ title: '鞋靴全能套图', subtitle: '套图模版', width: 1200, height: 675 }),
-    items: [
-      {
-        id: 'hero',
-        name: '主图',
-        promptSuffix:
-          ', product photography, hero shot, centered, studio lighting, clean background, high detail',
-        referenceWeight: 0.9,
-      },
-      {
-        id: 'angle',
-        name: '侧视角度',
-        promptSuffix:
-          ', side view, dynamic angle, product photography, studio lighting, high detail',
-        referenceWeight: 0.85,
-      },
-      {
-        id: 'detail',
-        name: '细节特写',
-        promptSuffix:
-          ', macro detail shot, material texture, stitching, high detail, studio lighting',
-        referenceWeight: 0.8,
-      },
-      {
-        id: 'on-foot',
-        name: '上脚场景',
-        promptSuffix:
-          ', on-foot lifestyle, street style, natural lighting, shallow depth of field, realistic',
-        referenceWeight: 0.7,
-      },
-    ],
+    availableShotIds: ['front', 'angle45', 'side', 'detail', 'on-foot', 'scene'],
+    defaultShotIds: ['front', 'angle45', 'detail', 'on-foot'],
   },
 ];

@@ -42,6 +42,9 @@ const platforms: Platform[] = [
   { id: 'tiktok', name: 'TikTok Shop（抖音跨境）', icon: Video, color: 'text-pink-400' },
   { id: 'aliexpress', name: 'AliExpress（全球速卖通）', icon: Box, color: 'text-red-400' },
   { id: 'alibaba', name: '阿里巴巴国际站', icon: Globe, color: 'text-orange-500' },
+  { id: 'lazada', name: 'Lazada', icon: Store, color: 'text-orange-400' },
+  { id: 'ebay', name: 'eBay', icon: ShoppingBag, color: 'text-white/70' },
+  { id: 'shein', name: 'SHEIN', icon: Sparkles, color: 'text-white/70' },
 ];
 
 interface Tag {
@@ -69,7 +72,7 @@ const bottomTags: Tag[] = [
   { id: 'text', label: '有文本', icon: Type },
 ];
 
-export function FeatureTags() {
+export function FeatureTags({ variant = 'default' }: { variant?: 'default' | 'suite' }) {
   const { activeTags, toggleTag, activeTab, generationContext, updateGenerationContext, uploadedImages } = useAppStore();
   const { fileInputRef, handleFileUpload, openPicker } = useImageUploadPicker();
   const modelId = resolveModelId(generationContext.model);
@@ -77,6 +80,13 @@ export function FeatureTags() {
   const selectedPlatform = platforms.find(p => p.id === generationContext.platformId) || platforms[0];
 
   const isTagActive = (tagId: string) => activeTags.includes(tagId);
+
+  const visibleTags =
+    variant === 'suite'
+      ? tags.filter((t) => ['model', 'style', 'more'].includes(t.id))
+      : tags;
+
+  const visibleBottomTags = variant === 'suite' ? bottomTags.filter((t) => t.id === 'text') : bottomTags;
 
   return (
     <motion.div
@@ -96,7 +106,7 @@ export function FeatureTags() {
 
       {/* Main Tags Row */}
       <div className="flex items-center gap-2 flex-wrap">
-        {tags.map((tag, index) => {
+        {visibleTags.map((tag, index) => {
           const isActive =
             tag.id === 'crossborder'
               ? generationContext.scene === 'crossborder'
@@ -445,7 +455,7 @@ export function FeatureTags() {
 
       {/* Bottom Tags Row */}
       <div className="flex items-center gap-2 flex-wrap">
-        {bottomTags.map((tag, index) => {
+        {visibleBottomTags.map((tag, index) => {
           const isActive = isTagActive(tag.id);
           const Icon = tag.icon;
 

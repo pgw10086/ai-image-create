@@ -53,6 +53,9 @@ export interface AppState {
   domesticMode: 'single' | 'suite';
   setDomesticMode: (mode: 'single' | 'suite') => void;
 
+  suitePresetRequest: { presetId: 'detail' | 'brand'; requestedAt: number } | null;
+  requestSuitePreset: (presetId: 'detail' | 'brand') => void;
+
   // Input
   inputValue: string;
   setInputValue: (value: string) => void;
@@ -100,6 +103,9 @@ export const useAppStore = create<AppState>()(
 
       domesticMode: 'single',
       setDomesticMode: (mode) => set({ domesticMode: mode }),
+
+      suitePresetRequest: null,
+      requestSuitePreset: (presetId) => set({ suitePresetRequest: { presetId, requestedAt: Date.now() } }),
       
       // Input
       inputValue: '',

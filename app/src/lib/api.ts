@@ -21,6 +21,7 @@ export async function generateImage(params: GenerateImageParams): Promise<Genera
     image,
     size = '2048x2048',
     model = 'doubao-seedream-4-5-251128',
+    watermark = true,
     sequential_image_generation = 'disabled',
     sequential_image_generation_options,
     stream = false,
@@ -50,7 +51,7 @@ export async function generateImage(params: GenerateImageParams): Promise<Genera
     stream,
     image,
     response_format: 'url',
-    watermark: true,
+    watermark,
   };
 
   try {

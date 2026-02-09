@@ -7,8 +7,8 @@
 *   **环境变量**: 仅通过 `import.meta.env` 读取，禁止硬编码或写入仓库
 
 ## 2. 参考文档
-*   API Curl 示例（字段样例）：`c:\codes\shop\info\模型curl调用.md`
-*   API 详细字段说明（取值范围/限制）：`c:\codes\shop\info\图片生成 API（Seedream 4.0-4.5 API）.md`
+*   API Curl 示例（字段样例）：`c:\codes\ai-product-gen\info\模型curl调用.md`
+*   API 详细字段说明（取值范围/限制）：`c:\codes\ai-product-gen\info\图片生成 API（Seedream 4.0-4.5 API）.md`
 
 ## 3. 环境变量约定
 *   `VITE_VOLC_API_KEY`: 火山方舟 API Key（前端仅读取，不允许硬编码到仓库）
@@ -29,7 +29,7 @@ export interface GenerateImageParams {
   image?: string | string[]; // Base64 或 URL；多图参考传数组
   size?: string; // 例："2K" | "4K" | "2048x2048"
   model?: string; // Model ID 或 Endpoint ID
-  sequential_image_generation?: 'auto' | 'disabled'; // 套图编排不依赖该字段
+  sequential_image_generation?: 'auto' | 'disabled'; // 4.0/4.5 组图能力开关（单图/套图均可用）
   sequential_image_generation_options?: {
     max_images: number;
   };

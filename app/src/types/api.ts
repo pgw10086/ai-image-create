@@ -4,6 +4,7 @@ export interface GenerateImageParams {
   image?: string | string[]; // Base64 或 URL
   size?: string; // e.g. "2048x2048"
   model?: 'doubao-seedream-4.5' | 'doubao-seedream-4.0' | 'doubao-seedream-4-5-251128';
+  watermark?: boolean;
   sequential_image_generation?: 'auto' | 'disabled';
   sequential_image_generation_options?: {
     max_images: number;

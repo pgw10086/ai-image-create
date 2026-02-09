@@ -12,3 +12,4 @@ app/.env
 app/.env.*
 !app/.env.example
 
+app/package-lock.json

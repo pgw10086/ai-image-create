@@ -40,13 +40,15 @@ export function SuiteResultView() {
 
   const handleDownloadAll = async (suiteTask: GenerationTask & { result: { suite: SuiteGenerationResult } }) => {
     const suite = suiteTask.result.suite;
-    const images = suite.items
-      .filter((it) => it.status === 'success' && it.images?.[0]?.url)
-      .map((it, idx) => ({
-        idx,
+    const images = suite.items.flatMap((it, itemIdx) => {
+      const list = (it.images ?? []).filter((img) => img?.url);
+      return list.map((img, imgIdx) => ({
+        itemIdx,
+        imgIdx,
         name: it.name,
-        url: it.images![0]!.url,
+        url: img.url,
       }));
+    });
 
     if (images.length === 0) {
       toast.error('没有可下载的图片');
@@ -60,7 +62,7 @@ export function SuiteResultView() {
           const resp = await fetch(img.url);
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
           const blob = await resp.blob();
-          const filename = `${String(img.idx + 1).padStart(2, '0')}_${sanitizeFilename(img.name)}${guessExt(img.url)}`;
+          const filename = `${String(img.itemIdx + 1).padStart(2, '0')}_${String(img.imgIdx + 1).padStart(2, '0')}_${sanitizeFilename(img.name)}${guessExt(img.url)}`;
           zip.file(filename, blob);
         })
       );
@@ -98,7 +100,9 @@ export function SuiteResultView() {
         prompt: item.prompt,
         referenceImages: refImages,
         model: suite.model,
-        size: suite.size,
+        size: item.size,
+        imageCount: item.imageCount,
+        watermark: suite.watermark,
       });
 
       const nextSuite: SuiteGenerationResult = {
@@ -174,12 +178,41 @@ export function SuiteResultView() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {suite.items.map((it) => (
                   <div key={it.id} className="rounded-xl border border-white/10 overflow-hidden bg-black/20">
-                    <div className="aspect-square bg-black/40 relative">
-                      {it.images?.[0]?.url ? (
-                        <img src={it.images[0].url} alt={it.name} className="w-full h-full object-cover" />
+                    <div className="bg-black/40 relative">
+                      {it.images && it.images.length > 0 ? (
+                        <div className="grid grid-cols-2 gap-px">
+                          {it.images.slice(0, 4).map((img, idx) => (
+                            <button
+                              key={`${it.id}-${idx}`}
+                              type="button"
+                              className="aspect-square bg-black/30 overflow-hidden"
+                              onClick={() =>
+                                downloadByLink(img.url, `${sanitizeFilename(it.name)}_${String(idx + 1).padStart(2, '0')}${guessExt(img.url)}`)
+                              }
+                            >
+                              <img src={img.url} alt={it.name} className="w-full h-full object-cover" />
+                            </button>
+                          ))}
+                          {it.images.length < 4 &&
+                            Array.from({ length: 4 - it.images.length }).map((_, i) => (
+                              <div key={`${it.id}-pad-${i}`} className="aspect-square bg-black/20" />
+                            ))}
+                        </div>
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-xs text-white/40">
+                        <div className="aspect-square w-full flex items-center justify-center text-xs text-white/40">
                           {it.status === 'failed' ? '失败' : '未生成'}
+                        </div>
+                      )}
+
+                      {it.images && it.images.length > 1 && (
+                        <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] bg-black/60 text-white/80 border border-white/10">
+                          {it.images.length} 张
+                        </div>
+                      )}
+
+                      {it.images && it.images.length > 4 && (
+                        <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-full text-[10px] bg-black/60 text-white/80 border border-white/10">
+                          +{it.images.length - 4}
                         </div>
                       )}
                     </div>

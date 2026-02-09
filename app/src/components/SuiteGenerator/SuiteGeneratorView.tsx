@@ -1,19 +1,28 @@
 import { motion } from 'framer-motion';
-import { Loader2, Plus, RotateCcw, Send, X } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { ChevronDown, ChevronUp, Loader2, Plus, RotateCcw, Send, Trash2, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { useAppStore } from '@/store/appStore';
 import type { GenerationTask } from '@/store/appStore';
 import type { SuiteTemplate } from '@/types/suite';
-import type { SuiteItemResult } from '@/types/suite';
+import type { SuiteItemResult, SuiteShotDefinition } from '@/types/suite';
 import { executeSuiteGeneration, generateSuiteItem } from '@/services/suiteGenerationService';
 import { TemplateSelector } from './TemplateSelector';
-import { buildPromptWithContext, resolveModelId, resolveSizeFromRatioMode } from '@/lib/generationContext';
+import { buildPromptWithContext, MODEL_OPTIONS, resolveModelId, resolveSizeFromRatioMode, STYLE_PRESETS } from '@/lib/generationContext';
 import { useImageUploadPicker } from '@/hooks/useImageUploadPicker';
+import { getSuiteShotById } from '@/constants/suiteShots';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { normalizeImageSize } from '@/lib/utils';
+import { PLATFORM_STANDARDS, getPlatformStandardById } from '@/constants/platformStandards';
+import { suiteTemplates } from '@/constants/templates';
+import { getSuitePresetById } from '@/constants/suitePresets';
 
 function joinPrompt(base: string, suffix: string) {
   const b = (base ?? '').trim();
@@ -36,39 +45,313 @@ export function SuiteGeneratorView() {
     deductCredits,
     generationContext,
     activeTags,
+    toggleTag,
+    updateGenerationContext,
+    suitePresetRequest,
   } = useAppStore();
 
   const [selectedTemplate, setSelectedTemplate] = useState<SuiteTemplate | null>(null);
   const [useFirstImageAsReference, setUseFirstImageAsReference] = useState(true);
-  const [itemPromptOverrides, setItemPromptOverrides] = useState<Record<string, string>>({});
-  const [suiteItems, setSuiteItems] = useState<SuiteItemResult[] | null>(null);
+  const [suiteItems, setSuiteItems] = useState<SuiteItemResult[]>([]);
   const [activeSuiteTaskId, setActiveSuiteTaskId] = useState<string | null>(null);
+  const [newItemShotId, setNewItemShotId] = useState<string>('front');
+  const [watermarkEnabled, setWatermarkEnabled] = useState(false);
+  const [usePlatformStandard, setUsePlatformStandard] = useState(true);
+  const [customShots, setCustomShots] = useState<SuiteShotDefinition[]>([]);
+  const [customShotDialogOpen, setCustomShotDialogOpen] = useState(false);
+  const [customShotDraft, setCustomShotDraft] = useState<{
+    name: string;
+    description: string;
+    promptSuffixZh: string;
+    ratioMode: string;
+    imageCount: number;
+  }>({ name: '', description: '', promptSuffixZh: '', ratioMode: '1:1', imageCount: 2 });
 
   const isGenerating = tasks.some((t) => t.status === 'processing');
   const abortRef = useRef<AbortController | null>(null);
+  const lastPresetAtRef = useRef<number>(0);
   const { fileInputRef, handleFileUpload, openPicker } = useImageUploadPicker();
 
-  const derivedItems = useMemo(() => {
+  const templateAvailableShotIds = useMemo(() => {
     if (!selectedTemplate) return [];
-    const modelId = resolveModelId(generationContext.model);
-    const { hint: sizeHint } = resolveSizeFromRatioMode({ ratioMode: generationContext.ratioMode, modelId });
-    const allowText = activeTags.includes('text');
-    const baseGlobal = (inputValue.trim() || 'product photography, professional e-commerce style').trim();
-    return selectedTemplate.items.map((it) => {
-      const promptBase = itemPromptOverrides[it.id] ?? joinPrompt(baseGlobal, it.promptSuffix);
-      const prompt = buildPromptWithContext({
-        basePrompt: promptBase,
-        context: generationContext,
-        allowText,
-        sizeHint,
-      });
-      return { id: it.id, name: it.name, prompt };
-    });
-  }, [activeTags, generationContext, inputValue, itemPromptOverrides, selectedTemplate]);
+    const fromTemplate = selectedTemplate.availableShotIds ?? [];
+    if (fromTemplate.length > 0) return fromTemplate;
+    const fromItems = (selectedTemplate.items ?? []).map((it) => it.id).filter(Boolean);
+    return fromItems;
+  }, [selectedTemplate]);
 
-  const handleResetPrompts = () => {
-    setItemPromptOverrides({});
-    toast.success('已重置派生 Prompt');
+  const availableShots = useMemo(() => {
+    const getShot = (id: string) => customShots.find((s) => s.id === id) ?? getSuiteShotById(id);
+    const base = templateAvailableShotIds
+      .map((id) => getShot(id))
+      .filter(Boolean)
+      .map((s) => s!);
+    const extra = customShots.filter((s) => !base.some((b) => b.id === s.id));
+    return [...base, ...extra];
+  }, [customShots, templateAvailableShotIds]);
+
+  const selectedShotIdSet = useMemo(() => {
+    return new Set(suiteItems.map((it) => it.shotId).filter(Boolean) as string[]);
+  }, [suiteItems]);
+
+  const suiteContext = useMemo(
+    () => ({
+      ...generationContext,
+      language: 'zh' as const,
+      platformId: usePlatformStandard ? generationContext.platformId : '',
+    }),
+    [generationContext, usePlatformStandard]
+  );
+
+  const baseGlobal = useMemo(() => {
+    return (inputValue.trim() || '商品摄影，专业电商风格').trim();
+  }, [inputValue]);
+
+  const allowText = useMemo(() => activeTags.includes('text'), [activeTags]);
+
+  const ASPECT_RATIO_OPTIONS: Array<{ id: string; label: string }> = [
+    { id: '智能比例', label: '智能比例' },
+    { id: '1:1', label: '1:1' },
+    { id: '4:3', label: '4:3' },
+    { id: '3:4', label: '3:4' },
+    { id: '16:9', label: '16:9' },
+    { id: '9:16', label: '9:16' },
+    { id: '3:2', label: '3:2' },
+    { id: '2:3', label: '2:3' },
+    { id: '21:9', label: '21:9' },
+  ];
+
+  const resolveResolutionOptions = (modelId: string) => {
+    const m = (modelId ?? '').toLowerCase();
+    if (m.includes('seedream-4.0')) return ['1K', '2K', '4K'] as const;
+    if (m.includes('seedream-4.5') || m.includes('seedream-4-5')) return ['2K', '4K'] as const;
+    return [] as const;
+  };
+
+  const recommendedPixelSizesByRatio = (ratioMode: string, modelId: string) => {
+    const r = (ratioMode ?? '').trim() || '智能比例';
+    if (r === '智能比例') return [];
+    const is30 = modelId.includes('3.0-t2i');
+    const map45: Record<string, string> = {
+      '1:1': '2048x2048',
+      '4:3': '2304x1728',
+      '3:4': '1728x2304',
+      '16:9': '2560x1440',
+      '9:16': '1440x2560',
+      '3:2': '2496x1664',
+      '2:3': '1664x2496',
+      '21:9': '3024x1296',
+    };
+    const map30: Record<string, string> = {
+      '1:1': '1024x1024',
+      '4:3': '1152x864',
+      '3:4': '864x1152',
+      '16:9': '1280x720',
+      '9:16': '720x1280',
+      '3:2': '1248x832',
+      '2:3': '832x1248',
+      '21:9': '1512x648',
+    };
+    const size = (is30 ? map30 : map45)[r];
+    return size ? [size] : [];
+  };
+
+  const resolveSizeFromItemConfig = (params: {
+    ratioMode: string;
+    sizeMode?: SuiteItemResult['sizeMode'];
+    sizeResolution?: SuiteItemResult['sizeResolution'];
+    sizePx?: string;
+    modelId: string;
+  }) => {
+    const ratioMode = (params.ratioMode ?? '智能比例').trim();
+    const modelId = (params.modelId ?? '').trim();
+    const resolutionOptions = resolveResolutionOptions(modelId);
+
+    const defaultResolution = (resolutionOptions[0] ?? undefined) as SuiteItemResult['sizeResolution'] | undefined;
+    const defaultPixel = recommendedPixelSizesByRatio(ratioMode, modelId)[0];
+
+    if (params.sizeMode === 'resolution') {
+      const desired = params.sizeResolution ?? defaultResolution;
+      if (desired && (resolutionOptions as readonly string[]).includes(desired)) return desired;
+      if (defaultResolution) return defaultResolution;
+    }
+
+    const rawPx = (params.sizePx ?? '').trim() || defaultPixel;
+    if (rawPx) return normalizeImageSize(rawPx, modelId);
+
+    const { size } = resolveSizeFromRatioMode({ ratioMode, modelId });
+    return size;
+  };
+
+  const computeSizeHintZh = (params: { ratioMode: string; size?: string; sizeMode?: string }) => {
+    const r = (params.ratioMode ?? '').trim() || '智能比例';
+    const size = (params.size ?? '').trim();
+    if (!size) return r === '智能比例' ? '画面比例：智能（由模型自动选择）。' : `画面比例：${r}。`;
+    if (params.sizeMode === 'resolution') return `分辨率档位：${size}；画面比例：${r}。`;
+    return `输出尺寸：${size}；画面比例：${r}。`;
+  };
+
+  const composeItemPrompt = (
+    params: Pick<SuiteItemResult, 'promptBase' | 'ratioMode' | 'sizeMode' | 'sizeResolution' | 'sizePx'> & {
+      modelId: string;
+    }
+  ) => {
+    const size = resolveSizeFromItemConfig({
+      ratioMode: params.ratioMode ?? '智能比例',
+      sizeMode: params.sizeMode,
+      sizeResolution: params.sizeResolution,
+      sizePx: params.sizePx,
+      modelId: params.modelId,
+    });
+    const sizeHint = computeSizeHintZh({ ratioMode: params.ratioMode ?? '智能比例', size, sizeMode: params.sizeMode });
+    return buildPromptWithContext({
+      basePrompt: (params.promptBase ?? '').trim(),
+      context: suiteContext,
+      allowText,
+      sizeHint,
+    });
+  };
+
+  const createItemFromShot = (shotId: string, overrides?: Partial<SuiteItemResult>) => {
+    const shot = customShots.find((s) => s.id === shotId) ?? getSuiteShotById(shotId);
+    const modelId = resolveModelId(generationContext.model);
+    const ratioMode = overrides?.ratioMode ?? shot?.defaultRatioMode ?? '智能比例';
+    const defaultSizeMode: SuiteItemResult['sizeMode'] = ratioMode === '智能比例' ? 'resolution' : 'pixels';
+    const sizeMode = overrides?.sizeMode ?? defaultSizeMode;
+    const sizeResolution =
+      overrides?.sizeResolution ?? (sizeMode === 'resolution' ? (resolveResolutionOptions(modelId)[0] as any) : undefined);
+    const sizePx = overrides?.sizePx ?? (sizeMode === 'pixels' ? recommendedPixelSizesByRatio(ratioMode, modelId)[0] : undefined);
+    const size = overrides?.size ?? resolveSizeFromItemConfig({ ratioMode, sizeMode, sizeResolution, sizePx, modelId });
+    const imageCount = overrides?.imageCount ?? shot?.defaultImageCount ?? 2;
+    const promptBase = overrides?.promptBase ?? joinPrompt(baseGlobal, shot?.defaultPromptSuffixZh ?? '');
+    const prompt = composeItemPrompt({
+      promptBase,
+      ratioMode,
+      sizeMode,
+      sizeResolution,
+      sizePx,
+      modelId,
+    });
+    const id =
+      overrides?.id ??
+      (typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${shotId}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+
+    return {
+      id,
+      shotId,
+      name: overrides?.name ?? shot?.name ?? shotId,
+      promptBase,
+      prompt,
+      ratioMode,
+      sizeMode,
+      sizeResolution,
+      sizePx,
+      size,
+      imageCount,
+      status: overrides?.status ?? 'pending',
+      images: overrides?.images,
+      error: overrides?.error,
+    } satisfies SuiteItemResult;
+  };
+
+  useEffect(() => {
+    if (!selectedTemplate) return;
+    if (isGenerating) return;
+    const modelId = resolveModelId(generationContext.model);
+    setSuiteItems((prev) =>
+      prev.map((it) => {
+        const ratioMode = it.ratioMode ?? '智能比例';
+        const sizeMode: SuiteItemResult['sizeMode'] = it.sizeMode ?? (ratioMode === '智能比例' ? 'resolution' : 'pixels');
+        const sizeResolution = it.sizeResolution;
+        const sizePx = it.sizePx;
+        const size = resolveSizeFromItemConfig({ ratioMode, sizeMode, sizeResolution, sizePx, modelId });
+        const prompt = composeItemPrompt({
+          promptBase: it.promptBase ?? '',
+          ratioMode,
+          sizeMode,
+          sizeResolution,
+          sizePx,
+          modelId,
+        });
+        return { ...it, sizeMode, sizeResolution, sizePx, size, prompt };
+      })
+    );
+  }, [
+    allowText,
+    generationContext.model,
+    generationContext.platformId,
+    generationContext.scene,
+    generationContext.stylePreset,
+    isGenerating,
+    selectedTemplate,
+    usePlatformStandard,
+  ]);
+
+  useEffect(() => {
+    const req = suitePresetRequest;
+    if (!req) return;
+    if (req.requestedAt <= lastPresetAtRef.current) return;
+    lastPresetAtRef.current = req.requestedAt;
+
+    const preset = getSuitePresetById(req.presetId);
+    if (!preset) return;
+
+    const tpl = suiteTemplates.find((t) => t.id === preset.templateId);
+    if (!tpl) {
+      toast.error('未找到对应套图模板');
+      return;
+    }
+
+    setSelectedTemplate(tpl);
+    setActiveSuiteTaskId(null);
+    setUsePlatformStandard(true);
+    setWatermarkEnabled(false);
+    updateGenerationContext({
+      scene: preset.scene,
+      stylePreset: preset.stylePreset ?? undefined,
+    });
+
+    const nextGlobal = (inputValue.trim() || preset.defaultGlobalPrompt || '').trim();
+    if (nextGlobal && nextGlobal !== inputValue.trim()) setInputValue(nextGlobal);
+
+    const shotIds = (tpl.defaultShotIds?.length ? tpl.defaultShotIds : tpl.availableShotIds) ?? [];
+    const modelId = resolveModelId(generationContext.model);
+    const initial = shotIds.map((id) => {
+      const item = createItemFromShot(id, { status: 'pending', promptBase: joinPrompt(nextGlobal, (customShots.find((s) => s.id === id) ?? getSuiteShotById(id))?.defaultPromptSuffixZh ?? '') });
+      const promptBase = joinPrompt(item.promptBase ?? '', preset.promptAddonZh);
+      const ratioMode = item.ratioMode ?? '智能比例';
+      const sizeMode = item.sizeMode;
+      const sizeResolution = item.sizeResolution;
+      const sizePx = item.sizePx;
+      const size = resolveSizeFromItemConfig({ ratioMode, sizeMode, sizeResolution, sizePx, modelId });
+      const prompt = composeItemPrompt({ promptBase, ratioMode, sizeMode, sizeResolution, sizePx, modelId });
+      return { ...item, promptBase, size, prompt };
+    });
+
+    setSuiteItems(initial);
+    setNewItemShotId((tpl.availableShotIds?.[0] ?? shotIds[0] ?? 'front').toString());
+    toast.success(`已应用「${preset.name}」预设`);
+  }, [customShots, generationContext.model, inputValue, setInputValue, suitePresetRequest, updateGenerationContext]);
+
+  const handleResetDerived = () => {
+    const modelId = resolveModelId(generationContext.model);
+    setSuiteItems((prev) =>
+      prev.map((it) => {
+        const shot = customShots.find((s) => s.id === (it.shotId ?? '')) ?? getSuiteShotById(it.shotId ?? '');
+        const ratioMode = it.ratioMode ?? '智能比例';
+        const sizeMode: SuiteItemResult['sizeMode'] = it.sizeMode ?? (ratioMode === '智能比例' ? 'resolution' : 'pixels');
+        const sizeResolution =
+          it.sizeResolution ?? (sizeMode === 'resolution' ? (resolveResolutionOptions(modelId)[0] as any) : undefined);
+        const sizePx = it.sizePx ?? (sizeMode === 'pixels' ? recommendedPixelSizesByRatio(ratioMode, modelId)[0] : undefined);
+        const size = resolveSizeFromItemConfig({ ratioMode, sizeMode, sizeResolution, sizePx, modelId });
+        const promptBase = joinPrompt(baseGlobal, shot?.defaultPromptSuffixZh ?? '');
+        const prompt = composeItemPrompt({ promptBase, ratioMode, sizeMode, sizeResolution, sizePx, modelId });
+        return { ...it, name: shot?.name ?? it.name, promptBase, prompt, ratioMode, sizeMode, sizeResolution, sizePx, size };
+      })
+    );
+    toast.success('已重新派生子项提示词');
   };
 
   const handleStop = () => {
@@ -83,8 +366,9 @@ export function SuiteGeneratorView() {
       suite: {
         templateId: selectedTemplate.id,
         templateName: selectedTemplate.name,
-        globalPrompt: (inputValue.trim() || 'product photography, professional e-commerce style').trim(),
+        globalPrompt: baseGlobal,
         model: resolveModelId(generationContext.model),
+        watermark: watermarkEnabled,
         referenceImages: uploadedImages.map((img) => img.url),
         useFirstImageAsReference,
         firstImageUrl,
@@ -93,11 +377,9 @@ export function SuiteGeneratorView() {
     });
   };
 
-  const handleRetryItem = async (itemId: string) => {
+  const handleGenerateItem = async (itemId: string, mode: 'replace' | 'append') => {
     if (!selectedTemplate) return;
     if (!activeSuiteTaskId) return;
-    if (!suiteItems) return;
-
     const item = suiteItems.find((x) => x.id === itemId);
     if (!item) return;
 
@@ -105,12 +387,12 @@ export function SuiteGeneratorView() {
     abortRef.current = controller;
 
     setSuiteItems((prev) =>
-      prev ? prev.map((p) => (p.id === itemId ? { ...p, status: 'processing', error: undefined } : p)) : prev
+      prev.map((p) => (p.id === itemId ? { ...p, status: 'processing', error: undefined } : p))
     );
 
     if (!deductCredits(10)) {
       setSuiteItems((prev) =>
-        prev ? prev.map((p) => (p.id === itemId ? { ...p, status: 'failed' as const, error: '算力不足，请充值' } : p)) : prev
+        prev.map((p) => (p.id === itemId ? { ...p, status: 'failed' as const, error: '算力不足，请充值' } : p))
       );
       abortRef.current = null;
       return;
@@ -118,7 +400,6 @@ export function SuiteGeneratorView() {
 
     try {
       const modelId = resolveModelId(generationContext.model);
-      const { size } = resolveSizeFromRatioMode({ ratioMode: generationContext.ratioMode, modelId });
       const baseReferenceImages = uploadedImages.map((img) => img.url);
       const firstImageUrl = suiteItems[0]?.images?.[0]?.url;
       const refImages =
@@ -130,17 +411,23 @@ export function SuiteGeneratorView() {
         prompt: item.prompt,
         referenceImages: refImages,
         model: modelId,
-        size,
+        size: item.size,
+        imageCount: item.imageCount,
+        watermark: watermarkEnabled,
         signal: controller.signal,
       });
 
-      const next = (suiteItems ?? []).map((p) => (p.id === itemId ? { ...p, status: 'success' as const, images } : p));
+      const next = suiteItems.map((p) => {
+        if (p.id !== itemId) return p;
+        const merged = mode === 'append' ? ([...(p.images ?? []), ...images] as any) : images;
+        return { ...p, status: 'success' as const, images: merged };
+      });
       setSuiteItems(next);
       syncSuiteToTask(activeSuiteTaskId, next, suiteItems[0]?.images?.[0]?.url ?? images[0]?.url);
-      toast.success('已重试成功');
+      toast.success(mode === 'append' ? '已追加生成' : '已生成完成');
     } catch (err: any) {
       deductCredits(-10);
-      const next = (suiteItems ?? []).map((p) =>
+      const next = suiteItems.map((p) =>
         p.id === itemId ? { ...p, status: 'failed' as const, error: err?.message || '生成失败，请重试' } : p
       );
       setSuiteItems(next);
@@ -160,20 +447,16 @@ export function SuiteGeneratorView() {
       toast.error('请输入全局商品描述或上传参考图');
       return;
     }
+    if (suiteItems.length === 0) {
+      toast.error('请先选择需要生成的镜头类型');
+      return;
+    }
 
     const taskId = Date.now().toString();
     setActiveSuiteTaskId(taskId);
 
     const modelId = resolveModelId(generationContext.model);
-    const { size, hint: sizeHint } = resolveSizeFromRatioMode({ ratioMode: generationContext.ratioMode, modelId });
-    const allowText = activeTags.includes('text');
-    const baseGlobal = (inputValue.trim() || 'product photography, professional e-commerce style').trim();
-    const globalPrompt = buildPromptWithContext({
-      basePrompt: baseGlobal,
-      context: generationContext,
-      allowText,
-      sizeHint,
-    });
+    const globalPrompt = baseGlobal;
 
     const newTask: GenerationTask = {
       id: taskId,
@@ -187,11 +470,11 @@ export function SuiteGeneratorView() {
       },
     };
 
-    const initialItems: SuiteItemResult[] = selectedTemplate.items.map((it) => ({
-      id: it.id,
-      name: it.name,
-      prompt: derivedItems.find((d) => d.id === it.id)?.prompt ?? joinPrompt(globalPrompt, it.promptSuffix),
+    const initialItems: SuiteItemResult[] = suiteItems.map((it) => ({
+      ...it,
       status: 'pending',
+      images: undefined,
+      error: undefined,
     }));
 
     setSuiteItems(initialItems);
@@ -202,22 +485,32 @@ export function SuiteGeneratorView() {
 
     try {
       const suiteResult = await executeSuiteGeneration({
-        template: selectedTemplate,
+        templateId: selectedTemplate.id,
+        templateName: selectedTemplate.name,
         globalPrompt,
+        watermark: watermarkEnabled,
+        items: initialItems.map((it) => ({
+          id: it.id,
+          shotId: it.shotId,
+          name: it.name,
+          promptBase: it.promptBase,
+          prompt: it.prompt,
+          ratioMode: it.ratioMode,
+          sizeMode: it.sizeMode,
+          sizeResolution: it.sizeResolution,
+          sizePx: it.sizePx,
+          size: it.size,
+          imageCount: it.imageCount,
+        })),
         referenceImages: newTask.input.referenceImages,
         model: newTask.input.model,
-        size,
         useFirstImageAsReference,
         concurrency: 2,
-        promptsByItemId: derivedItems.reduce((acc, it) => ({ ...acc, [it.id]: it.prompt }), {}),
         signal: controller.signal,
         deductCredits,
         refundCredits: (amount) => deductCredits(-amount),
         onItemUpdate: (itemId, patch) => {
-          setSuiteItems((prev) => {
-            if (!prev) return prev;
-            return prev.map((p) => (p.id === itemId ? { ...p, ...patch } : p));
-          });
+          setSuiteItems((prev) => prev.map((p) => (p.id === itemId ? { ...p, ...patch } : p)));
         },
       });
 
@@ -251,8 +544,11 @@ export function SuiteGeneratorView() {
           selectedTemplateId={null}
           onSelect={(tpl) => {
             setSelectedTemplate(tpl);
-            setSuiteItems(null);
-            setItemPromptOverrides({});
+            const shotIds = (tpl.defaultShotIds?.length ? tpl.defaultShotIds : tpl.availableShotIds) ?? [];
+            const initial = shotIds.map((id) => createItemFromShot(id, { status: 'pending' }));
+            setSuiteItems(initial);
+            setActiveSuiteTaskId(null);
+            setNewItemShotId((tpl.availableShotIds?.[0] ?? shotIds[0] ?? 'front').toString());
           }}
         />
       ) : (
@@ -265,12 +561,21 @@ export function SuiteGeneratorView() {
               <span className="text-white/50 text-sm">{selectedTemplate.description}</span>
             </div>
             <div className="flex items-center gap-2">
-              <Button type="button" variant="outline" onClick={() => setSelectedTemplate(null)} disabled={isGenerating}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setSelectedTemplate(null);
+                  setSuiteItems([]);
+                  setActiveSuiteTaskId(null);
+                }}
+                disabled={isGenerating}
+              >
                 返回选择
               </Button>
-              <Button type="button" variant="outline" onClick={handleResetPrompts} disabled={isGenerating}>
+              <Button type="button" variant="outline" onClick={handleResetDerived} disabled={isGenerating}>
                 <RotateCcw className="w-4 h-4" />
-                重置派生
+                重新派生
               </Button>
             </div>
           </div>
@@ -326,6 +631,133 @@ export function SuiteGeneratorView() {
                 </div>
               </div>
 
+              <div className="rounded-lg border border-white/10 p-3 bg-black/20">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <div className="text-xs text-white/50">模型</div>
+                    <Select
+                      value={(generationContext.model ?? MODEL_OPTIONS[0]?.label ?? '').toString()}
+                      onValueChange={(modelLabel) => {
+                        if (isGenerating) return;
+                        updateGenerationContext({ model: modelLabel });
+                      }}
+                    >
+                      <SelectTrigger className="w-full" size="sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MODEL_OPTIONS.map((m) => (
+                          <SelectItem key={m.id} value={m.label}>
+                            {m.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="text-xs text-white/50">参考风格</div>
+                    <Select
+                      value={(generationContext.stylePreset ?? '无').toString()}
+                      onValueChange={(label) => {
+                        if (isGenerating) return;
+                        updateGenerationContext({ stylePreset: label === '无' ? undefined : label });
+                      }}
+                    >
+                      <SelectTrigger className="w-full" size="sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {STYLE_PRESETS.map((s) => (
+                          <SelectItem key={s.id} value={s.label}>
+                            {s.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="text-xs text-white/50">图片内文字</div>
+                    <div className="flex items-center justify-between rounded-md border border-white/10 px-3 h-9 bg-black/20">
+                      <div className="text-sm text-white/80">有文本</div>
+                      <Switch
+                        checked={activeTags.includes('text')}
+                        onCheckedChange={(v) => {
+                          if (isGenerating) return;
+                          const std = usePlatformStandard ? getPlatformStandardById(generationContext.platformId) : undefined;
+                          if (v && std?.disallowTextInImage) {
+                            toast.error('所选平台标准不允许图片出现文字');
+                            return;
+                          }
+                          toggleTag('text');
+                        }}
+                        disabled={isGenerating || (usePlatformStandard && Boolean(getPlatformStandardById(generationContext.platformId)?.disallowTextInImage))}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="space-y-1 md:col-span-1">
+                    <div className="text-xs text-white/50">上架标准（可选）</div>
+                    <Select
+                      value={(generationContext.platformId ?? 'amazon').toString()}
+                      onValueChange={(platformId) => {
+                        if (isGenerating) return;
+                        updateGenerationContext({ platformId });
+                        const std = getPlatformStandardById(platformId);
+                        if (std?.disallowWatermark) setWatermarkEnabled(false);
+                        if (std?.disallowTextInImage && activeTags.includes('text')) toggleTag('text');
+                      }}
+                    >
+                      <SelectTrigger className="w-full" size="sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PLATFORM_STANDARDS.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-md border border-white/10 px-3 h-9 bg-black/20 md:col-span-1">
+                    <div className="text-sm text-white/80">启用平台规则</div>
+                    <Switch
+                      checked={usePlatformStandard}
+                      onCheckedChange={(v) => setUsePlatformStandard(Boolean(v))}
+                      disabled={isGenerating}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-md border border-white/10 px-3 h-9 bg-black/20 md:col-span-1">
+                    <div className="text-sm text-white/80">添加水印</div>
+                    <Switch
+                      checked={watermarkEnabled}
+                      onCheckedChange={(v) => setWatermarkEnabled(Boolean(v))}
+                      disabled={
+                        isGenerating ||
+                        (usePlatformStandard && Boolean(getPlatformStandardById(generationContext.platformId)?.disallowWatermark))
+                      }
+                    />
+                  </div>
+                </div>
+
+                {usePlatformStandard && (
+                  <div className="mt-2 text-xs text-white/50">
+                    {getPlatformStandardById(generationContext.platformId)?.promptHintZh ?? '已启用平台规则提示。'}
+                  </div>
+                )}
+                {usePlatformStandard && getPlatformStandardById(generationContext.platformId)?.disallowTextInImage && (
+                  <div className="mt-1 text-xs text-amber-300">
+                    该平台通常不允许图片内出现文字；建议关闭“有文本”，并在提示词中避免文案需求。
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center justify-between border-t border-white/10 pt-3">
                 <div className="flex items-center gap-3">
                   <Switch
@@ -357,57 +789,644 @@ export function SuiteGeneratorView() {
 
           <Card className="border-white/10 bg-card/60">
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">子项 Prompt 预览与微调</CardTitle>
+              <CardTitle className="text-base">镜头类型</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {derivedItems.map((it) => (
-                <div key={it.id} className="rounded-lg border border-white/10 p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-sm text-white/80">{it.name}</div>
-                    <div className="flex items-center gap-2">
-                      {suiteItems?.find((s) => s.id === it.id)?.status === 'failed' && (
-                        <>
-                          <span className="text-xs text-red-400">失败</span>
-                          {!isGenerating && (
-                            <Button type="button" variant="outline" size="sm" onClick={() => handleRetryItem(it.id)}>
-                              重试
-                            </Button>
-                          )}
-                        </>
-                      )}
-                      {suiteItems?.find((s) => s.id === it.id)?.status === 'success' && (
-                        <span className="text-xs text-emerald-400">成功</span>
-                      )}
-                      {suiteItems?.find((s) => s.id === it.id)?.status === 'processing' && (
-                        <span className="text-xs text-violet-300 flex items-center gap-1">
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                          生成中
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <Textarea
-                    value={itemPromptOverrides[it.id] ?? it.prompt}
-                    onChange={(e) => setItemPromptOverrides((prev) => ({ ...prev, [it.id]: e.target.value }))}
-                    className="min-h-16"
-                    disabled={isGenerating}
-                  />
-                  {suiteItems?.find((s) => s.id === it.id)?.error && (
-                    <div className="mt-2 text-xs text-red-400">{suiteItems?.find((s) => s.id === it.id)?.error}</div>
-                  )}
-                  {suiteItems?.find((s) => s.id === it.id)?.images?.[0]?.url && (
-                    <div className="mt-3">
-                      <img
-                        src={suiteItems.find((s) => s.id === it.id)?.images?.[0]?.url}
-                        alt={it.name}
-                        className="w-full max-w-[420px] rounded-xl border border-white/10"
-                      />
-                    </div>
-                  )}
-                </div>
-              ))}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {availableShots.map((shot) => {
+                  const checked = selectedShotIdSet.has(shot.id);
+                  return (
+                    <button
+                      key={shot.id}
+                      type="button"
+                      className="text-left rounded-lg border border-white/10 p-3 hover:bg-white/5 transition-colors"
+                      onClick={() => {
+                        if (isGenerating) return;
+                        if (checked) {
+                          setSuiteItems((prev) => prev.filter((it) => it.shotId !== shot.id));
+                          return;
+                        }
+                        setSuiteItems((prev) => [...prev, createItemFromShot(shot.id, { status: 'pending' })]);
+                      }}
+                      disabled={isGenerating}
+                    >
+                      <div className="flex items-start gap-3">
+                        <Checkbox checked={checked} className="mt-0.5" />
+                        <div className="min-w-0">
+                          <div className="text-sm text-white/90">{shot.name}</div>
+                          {shot.description && <div className="text-xs text-white/50 mt-1">{shot.description}</div>}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center gap-2 border-t border-white/10 pt-3">
+                <Select value={newItemShotId} onValueChange={setNewItemShotId}>
+                  <SelectTrigger className="w-[220px]" size="sm">
+                    <SelectValue placeholder="选择要新增的镜头类型" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableShots.map((shot) => (
+                      <SelectItem key={shot.id} value={shot.id}>
+                        {shot.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isGenerating}
+                  onClick={() => setSuiteItems((prev) => [...prev, createItemFromShot(newItemShotId, { status: 'pending' })])}
+                >
+                  <Plus className="w-4 h-4" />
+                  新增一项
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isGenerating}
+                  onClick={() => {
+                    setCustomShotDraft({ name: '', description: '', promptSuffixZh: '', ratioMode: '1:1', imageCount: 2 });
+                    setCustomShotDialogOpen(true);
+                  }}
+                >
+                  自定义镜头
+                </Button>
+              </div>
             </CardContent>
           </Card>
+
+          <Card className="border-white/10 bg-card/60">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">子项配置与结果</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {suiteItems.length === 0 ? (
+                <div className="text-sm text-white/50">请先在上方选择至少一个镜头类型。</div>
+              ) : (
+                suiteItems.map((it, idx) => {
+                  const status = it.status;
+                  const hasImages = (it.images?.length ?? 0) > 0;
+                  return (
+                    <div key={it.id} className="rounded-lg border border-white/10 p-3 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <div className="text-sm text-white/90">{it.name}</div>
+                            {status === 'processing' && (
+                              <span className="text-xs text-violet-300 flex items-center gap-1">
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                生成中
+                              </span>
+                            )}
+                            {status === 'failed' && <span className="text-xs text-red-400">失败</span>}
+                            {status === 'success' && <span className="text-xs text-emerald-400">成功</span>}
+                            {hasImages && <span className="text-xs text-white/50">共 {(it.images?.length ?? 0).toString()} 张</span>}
+                          </div>
+                          {it.error && <div className="mt-1 text-xs text-red-400">{it.error}</div>}
+                        </div>
+
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon-sm"
+                            disabled={isGenerating || idx === 0}
+                            onClick={() =>
+                              setSuiteItems((prev) => {
+                                const next = [...prev];
+                                const tmp = next[idx - 1];
+                                next[idx - 1] = next[idx];
+                                next[idx] = tmp;
+                                return next;
+                              })
+                            }
+                          >
+                            <ChevronUp className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon-sm"
+                            disabled={isGenerating || idx === suiteItems.length - 1}
+                            onClick={() =>
+                              setSuiteItems((prev) => {
+                                const next = [...prev];
+                                const tmp = next[idx + 1];
+                                next[idx + 1] = next[idx];
+                                next[idx] = tmp;
+                                return next;
+                              })
+                            }
+                          >
+                            <ChevronDown className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon-sm"
+                            disabled={isGenerating}
+                            onClick={() => setSuiteItems((prev) => prev.filter((x) => x.id !== it.id))}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="space-y-1">
+                          <div className="text-xs text-white/50">镜头类型</div>
+                          <Select
+                            value={(it.shotId ?? 'front').toString()}
+                            onValueChange={(shotId) => {
+                              if (isGenerating) return;
+                              setSuiteItems((prev) =>
+                                prev.map((p) => {
+                                  if (p.id !== it.id) return p;
+                                  const next = createItemFromShot(shotId, {
+                                    id: p.id,
+                                    ratioMode: p.ratioMode,
+                                    imageCount: p.imageCount,
+                                    status: p.status,
+                                    images: p.images,
+                                    error: p.error,
+                                  });
+                                  return next;
+                                })
+                              );
+                            }}
+                          >
+                            <SelectTrigger className="w-full" size="sm">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {availableShots.map((shot) => (
+                                <SelectItem key={shot.id} value={shot.id}>
+                                  {shot.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="text-xs text-white/50">画面比例</div>
+                          <Select
+                            value={(it.ratioMode ?? '智能比例').toString()}
+                            onValueChange={(ratioMode) => {
+                              if (isGenerating) return;
+                              const modelId = resolveModelId(generationContext.model);
+                              setSuiteItems((prev) =>
+                                prev.map((p) => {
+                                  if (p.id !== it.id) return p;
+                                  const sizeMode: SuiteItemResult['sizeMode'] = ratioMode === '智能比例' ? 'resolution' : 'pixels';
+                                  const sizeResolution =
+                                    sizeMode === 'resolution' ? (resolveResolutionOptions(modelId)[0] as any) : undefined;
+                                  const sizePx =
+                                    sizeMode === 'pixels' ? recommendedPixelSizesByRatio(ratioMode, modelId)[0] : undefined;
+                                  const size = resolveSizeFromItemConfig({ ratioMode, sizeMode, sizeResolution, sizePx, modelId });
+                                  const prompt = composeItemPrompt({
+                                    promptBase: p.promptBase ?? '',
+                                    ratioMode,
+                                    sizeMode,
+                                    sizeResolution,
+                                    sizePx,
+                                    modelId,
+                                  });
+                                  return { ...p, ratioMode, sizeMode, sizeResolution, sizePx, size, prompt };
+                                })
+                              );
+                            }}
+                          >
+                            <SelectTrigger className="w-full" size="sm">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {ASPECT_RATIO_OPTIONS.map((r) => (
+                                <SelectItem key={r.id} value={r.id}>
+                                  {r.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="text-xs text-white/50">生图张数</div>
+                          <Select
+                            value={String(it.imageCount ?? 1)}
+                            onValueChange={(v) => {
+                              if (isGenerating) return;
+                              const imageCount = Math.max(1, Math.min(15, Number(v) || 1));
+                              setSuiteItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, imageCount } : p)));
+                            }}
+                          >
+                            <SelectTrigger className="w-full" size="sm">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {[1, 2, 3, 4, 6, 8].map((n) => (
+                                <SelectItem key={n} value={String(n)}>
+                                  {n} 张
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="space-y-1">
+                          <div className="text-xs text-white/50">输出尺寸模式</div>
+                          <Select
+                            value={(it.sizeMode ?? (it.ratioMode === '智能比例' ? 'resolution' : 'pixels')).toString()}
+                            onValueChange={(nextMode) => {
+                              if (isGenerating) return;
+                              const modelId = resolveModelId(generationContext.model);
+                              setSuiteItems((prev) =>
+                                prev.map((p) => {
+                                  if (p.id !== it.id) return p;
+                                  const sizeMode = nextMode as SuiteItemResult['sizeMode'];
+                                  const ratioMode = p.ratioMode ?? '智能比例';
+                                  const sizeResolution =
+                                    sizeMode === 'resolution' ? (resolveResolutionOptions(modelId)[0] as any) : undefined;
+                                  const sizePx =
+                                    sizeMode === 'pixels' ? (p.sizePx ?? recommendedPixelSizesByRatio(ratioMode, modelId)[0]) : undefined;
+                                  const size = resolveSizeFromItemConfig({ ratioMode, sizeMode, sizeResolution, sizePx, modelId });
+                                  const prompt = composeItemPrompt({
+                                    promptBase: p.promptBase ?? '',
+                                    ratioMode,
+                                    sizeMode,
+                                    sizeResolution,
+                                    sizePx,
+                                    modelId,
+                                  });
+                                  return { ...p, sizeMode, sizeResolution, sizePx, size, prompt };
+                                })
+                              );
+                            }}
+                          >
+                            <SelectTrigger className="w-full" size="sm">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {resolveResolutionOptions(resolveModelId(generationContext.model)).length > 0 && (
+                                <SelectItem value="resolution">分辨率档位（1K/2K/4K）</SelectItem>
+                              )}
+                              <SelectItem value="pixels">自定义像素（宽x高）</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-1 md:col-span-2">
+                          <div className="text-xs text-white/50">输出尺寸</div>
+                          {(it.sizeMode ?? (it.ratioMode === '智能比例' ? 'resolution' : 'pixels')) === 'resolution' ? (
+                            <Select
+                              value={(it.sizeResolution ?? resolveResolutionOptions(resolveModelId(generationContext.model))[0] ?? '2K').toString()}
+                              onValueChange={(sizeResolution) => {
+                                if (isGenerating) return;
+                                const modelId = resolveModelId(generationContext.model);
+                                setSuiteItems((prev) =>
+                                  prev.map((p) => {
+                                    if (p.id !== it.id) return p;
+                                    const ratioMode = p.ratioMode ?? '智能比例';
+                                    const sizeMode: SuiteItemResult['sizeMode'] = 'resolution';
+                                    const size = resolveSizeFromItemConfig({
+                                      ratioMode,
+                                      sizeMode,
+                                      sizeResolution: sizeResolution as any,
+                                      sizePx: undefined,
+                                      modelId,
+                                    });
+                                    const prompt = composeItemPrompt({
+                                      promptBase: p.promptBase ?? '',
+                                      ratioMode,
+                                      sizeMode,
+                                      sizeResolution: sizeResolution as any,
+                                      sizePx: undefined,
+                                      modelId,
+                                    });
+                                    return { ...p, sizeMode, sizeResolution: sizeResolution as any, sizePx: undefined, size, prompt };
+                                  })
+                                );
+                              }}
+                            >
+                              <SelectTrigger className="w-full" size="sm">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {resolveResolutionOptions(resolveModelId(generationContext.model)).map((opt) => (
+                                  <SelectItem key={opt} value={opt}>
+                                    {opt}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <div className="flex flex-col gap-2">
+                              {recommendedPixelSizesByRatio(it.ratioMode ?? '智能比例', resolveModelId(generationContext.model)).length > 0 && (
+                                <Select
+                                  value={
+                                    (it.sizePx ??
+                                      recommendedPixelSizesByRatio(it.ratioMode ?? '智能比例', resolveModelId(generationContext.model))[0] ??
+                                      '').toString()
+                                  }
+                                  onValueChange={(sizePx) => {
+                                    if (isGenerating) return;
+                                    const modelId = resolveModelId(generationContext.model);
+                                    setSuiteItems((prev) =>
+                                      prev.map((p) => {
+                                        if (p.id !== it.id) return p;
+                                        const ratioMode = p.ratioMode ?? '智能比例';
+                                        const sizeMode: SuiteItemResult['sizeMode'] = 'pixels';
+                                        const size = resolveSizeFromItemConfig({ ratioMode, sizeMode, sizePx, modelId });
+                                        const prompt = composeItemPrompt({
+                                          promptBase: p.promptBase ?? '',
+                                          ratioMode,
+                                          sizeMode,
+                                          sizePx,
+                                          modelId,
+                                        });
+                                        return { ...p, sizeMode, sizePx, sizeResolution: undefined, size, prompt };
+                                      })
+                                    );
+                                  }}
+                                >
+                                  <SelectTrigger className="w-full" size="sm">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {recommendedPixelSizesByRatio(it.ratioMode ?? '智能比例', resolveModelId(generationContext.model)).map(
+                                      (s) => (
+                                        <SelectItem key={s} value={s}>
+                                          推荐：{s}
+                                        </SelectItem>
+                                      )
+                                    )}
+                                  </SelectContent>
+                                </Select>
+                              )}
+
+                              <div className="flex items-center gap-2">
+                                <Input
+                                  value={(it.sizePx ?? '').toString()}
+                                  placeholder="例如 2304x1728"
+                                  disabled={isGenerating}
+                                  onChange={(e) => {
+                                    const sizePx = e.target.value;
+                                    const modelId = resolveModelId(generationContext.model);
+                                    const ratioMode = it.ratioMode ?? '智能比例';
+                                    const sizeMode: SuiteItemResult['sizeMode'] = 'pixels';
+                                    const size = resolveSizeFromItemConfig({ ratioMode, sizeMode, sizePx, modelId });
+                                    const prompt = composeItemPrompt({
+                                      promptBase: it.promptBase ?? '',
+                                      ratioMode,
+                                      sizeMode,
+                                      sizePx,
+                                      modelId,
+                                    });
+                                    setSuiteItems((prev) =>
+                                      prev.map((p) =>
+                                        p.id === it.id ? { ...p, sizeMode, sizePx, sizeResolution: undefined, size, prompt } : p
+                                      )
+                                    );
+                                  }}
+                                  onBlur={() => {
+                                    const raw = (it.sizePx ?? '').trim();
+                                    if (!raw) return;
+                                    const modelId = resolveModelId(generationContext.model);
+                                    const normalized = normalizeImageSize(raw, modelId);
+                                    if (normalized === raw) return;
+                                    const ratioMode = it.ratioMode ?? '智能比例';
+                                    const sizeMode: SuiteItemResult['sizeMode'] = 'pixels';
+                                    const size = resolveSizeFromItemConfig({ ratioMode, sizeMode, sizePx: normalized, modelId });
+                                    const prompt = composeItemPrompt({
+                                      promptBase: it.promptBase ?? '',
+                                      ratioMode,
+                                      sizeMode,
+                                      sizePx: normalized,
+                                      modelId,
+                                    });
+                                    setSuiteItems((prev) =>
+                                      prev.map((p) =>
+                                        p.id === it.id
+                                          ? { ...p, sizeMode, sizePx: normalized, sizeResolution: undefined, size, prompt }
+                                          : p
+                                      )
+                                    );
+                                  }}
+                                />
+                                <div className="text-xs text-white/40 flex-shrink-0">将自动修正不满足最小像素的输入</div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="text-xs text-white/50">子项提示词（中文，可编辑）</div>
+                        <Textarea
+                          value={it.promptBase ?? ''}
+                          onChange={(e) => {
+                            const nextBase = e.target.value;
+                            const modelId = resolveModelId(generationContext.model);
+                            const ratioMode = it.ratioMode ?? '智能比例';
+                            const sizeMode = it.sizeMode;
+                            const sizeResolution = it.sizeResolution;
+                            const sizePx = it.sizePx;
+                            const nextPrompt = composeItemPrompt({
+                              promptBase: nextBase,
+                              ratioMode,
+                              sizeMode,
+                              sizeResolution,
+                              sizePx,
+                              modelId,
+                            });
+                            const size = resolveSizeFromItemConfig({ ratioMode, sizeMode, sizeResolution, sizePx, modelId });
+                            setSuiteItems((prev) =>
+                              prev.map((p) =>
+                                p.id === it.id ? { ...p, promptBase: nextBase, prompt: nextPrompt, size } : p
+                              )
+                            );
+                          }}
+                          className="min-h-16"
+                          disabled={isGenerating}
+                        />
+                        <div className="text-xs text-white/40 break-words">最终提交：{it.prompt}</div>
+                      </div>
+
+                      <div className="flex items-center justify-between border-t border-white/10 pt-3">
+                        <div className="text-xs text-white/50">
+                          {it.size ? `输出尺寸：${it.size}` : '输出尺寸：由模型自适应'}，张数：{it.imageCount ?? 1}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {!isGenerating && (
+                            <>
+                              <Button type="button" variant="outline" size="sm" onClick={() => handleGenerateItem(it.id, 'replace')}>
+                                生成该项
+                              </Button>
+                              {hasImages && (
+                                <Button type="button" variant="outline" size="sm" onClick={() => handleGenerateItem(it.id, 'append')}>
+                                  追加生成
+                                </Button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {hasImages && (
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                          {(it.images ?? []).map((img, imgIdx) => (
+                            <div key={`${it.id}-${imgIdx}`} className="relative rounded-lg overflow-hidden border border-white/10">
+                              <img src={img.url} alt={it.name} className="w-full h-full object-cover" />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSuiteItems((prev) =>
+                                    prev.map((p) => {
+                                      if (p.id !== it.id) return p;
+                                      const nextImages = (p.images ?? []).filter((_, i) => i !== imgIdx);
+                                      const nextStatus = nextImages.length > 0 ? p.status : 'pending';
+                                      const next = { ...p, images: nextImages, status: nextStatus } as SuiteItemResult;
+                                      if (activeSuiteTaskId) syncSuiteToTask(activeSuiteTaskId, prev.map((x) => (x.id === it.id ? next : x)));
+                                      return next;
+                                    })
+                                  );
+                                }}
+                                className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center text-white/80 hover:bg-black/80"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </CardContent>
+          </Card>
+
+          <Dialog open={customShotDialogOpen} onOpenChange={setCustomShotDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>自定义镜头</DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <div className="text-xs text-white/50">镜头名称</div>
+                  <Input
+                    value={customShotDraft.name}
+                    onChange={(e) => setCustomShotDraft((p) => ({ ...p, name: e.target.value }))}
+                    placeholder="例如：尺寸对比图 / 参数信息图 / 开箱场景"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <div className="text-xs text-white/50">用途说明（可选）</div>
+                  <Input
+                    value={customShotDraft.description}
+                    onChange={(e) => setCustomShotDraft((p) => ({ ...p, description: e.target.value }))}
+                    placeholder="例如：用于展示尺寸、对比参照物、突出卖点"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <div className="text-xs text-white/50">默认比例</div>
+                    <Select
+                      value={customShotDraft.ratioMode}
+                      onValueChange={(ratioMode) => setCustomShotDraft((p) => ({ ...p, ratioMode }))}
+                    >
+                      <SelectTrigger className="w-full" size="sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ASPECT_RATIO_OPTIONS.filter((x) => x.id !== '智能比例').map((r) => (
+                          <SelectItem key={r.id} value={r.id}>
+                            {r.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="text-xs text-white/50">默认张数</div>
+                    <Select
+                      value={String(customShotDraft.imageCount)}
+                      onValueChange={(v) => setCustomShotDraft((p) => ({ ...p, imageCount: Number(v) || 1 }))}
+                    >
+                      <SelectTrigger className="w-full" size="sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[1, 2, 3, 4, 6, 8].map((n) => (
+                          <SelectItem key={n} value={String(n)}>
+                            {n} 张
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="text-xs text-white/50">默认提示词后缀（中文）</div>
+                  <Textarea
+                    value={customShotDraft.promptSuffixZh}
+                    onChange={(e) => setCustomShotDraft((p) => ({ ...p, promptSuffixZh: e.target.value }))}
+                    className="min-h-20"
+                    placeholder="例如：尺寸对比图，加入参照物（手掌/硬币/尺子），信息清晰，构图干净，不要密集文字堆叠。"
+                  />
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setCustomShotDialogOpen(false)}
+                >
+                  取消
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    const name = customShotDraft.name.trim();
+                    if (!name) {
+                      toast.error('请输入镜头名称');
+                      return;
+                    }
+                    const id = `custom-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+                    const shot: SuiteShotDefinition = {
+                      id,
+                      name,
+                      description: customShotDraft.description.trim() || undefined,
+                      defaultPromptSuffixZh: customShotDraft.promptSuffixZh.trim(),
+                      defaultRatioMode: customShotDraft.ratioMode,
+                      defaultImageCount: Math.max(1, Math.min(15, Math.floor(customShotDraft.imageCount || 1))),
+                    };
+                    setCustomShots((prev) => [...prev, shot]);
+                    setSuiteItems((prev) => [...prev, createItemFromShot(id, { status: 'pending' })]);
+                    setNewItemShotId(id);
+                    setCustomShotDialogOpen(false);
+                    toast.success('已新增自定义镜头');
+                  }}
+                >
+                  创建并添加
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       )}
     </motion.div>

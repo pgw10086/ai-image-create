@@ -73,7 +73,7 @@ function App() {
               {domesticMode === 'single' ? <InputArea /> : <SuiteGeneratorView />}
 
               {/* Feature Tags */}
-              <FeatureTags />
+              {domesticMode === 'single' ? <FeatureTags /> : null}
 
               {/* Generated Gallery */}
               {domesticMode === 'single' ? <GeneratedGallery /> : <SuiteResultView />}

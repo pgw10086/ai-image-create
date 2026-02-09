@@ -58,17 +58,19 @@ const cardVariants = {
 };
 
 export function CapabilityCards() {
-  const { setActiveTab, setInputValue } = useAppStore();
+  const { setDomesticMode, requestSuitePreset } = useAppStore();
 
   const handleCardClick = (cap: Capability) => {
     switch (cap.id) {
       case 'detail':
-        setActiveTab('detail');
-        toast.success('已切换至详情页模式');
+        setDomesticMode('suite');
+        requestSuitePreset('detail');
+        toast.success('已应用「详情页」套图预设');
         break;
       case 'brand':
-        setInputValue('生成品牌风格统一的产品图片系列');
-        toast.success('已加载品牌模型提示');
+        setDomesticMode('suite');
+        requestSuitePreset('brand');
+        toast.success('已应用「品牌模型」套图预设');
         break;
     }
   };

@@ -30,28 +30,85 @@ export const RATIO_OPTIONS: Array<{ id: string; label: string }> = [
   { id: '4K', label: '4K' },
 ];
 
-export const STYLE_PRESETS: Array<{ id: string; label: string; prompt: string }> = [
-  { id: 'none', label: '无', prompt: '' },
-  { id: 'studio', label: '棚拍质感', prompt: 'Premium studio product photography, softbox lighting, crisp details.' },
-  { id: 'minimal', label: '极简留白', prompt: 'Minimal composition, clean background, lots of negative space.' },
-  { id: 'lifestyle', label: '生活方式场景', prompt: 'Lifestyle scene, natural lighting, authentic environment.' },
-  { id: 'flatlay', label: '平铺俯拍', prompt: 'Top-down flat lay composition, organized props, clean styling.' },
-  { id: 'cinematic', label: '电影感', prompt: 'Cinematic lighting, shallow depth of field, dramatic contrast.' },
-  { id: 'pastel', label: '柔和马卡龙', prompt: 'Soft pastel palette, gentle lighting, smooth gradients.' },
+export const STYLE_PRESETS: Array<{ id: string; label: string; promptZh: string; promptEn: string }> = [
+  { id: 'none', label: '无', promptZh: '', promptEn: '' },
+  {
+    id: 'studio',
+    label: '棚拍质感',
+    promptZh: '高质感棚拍商品摄影，柔光箱布光，细节清晰，质感高级。',
+    promptEn: 'Premium studio product photography, softbox lighting, crisp details.',
+  },
+  {
+    id: 'minimal',
+    label: '极简留白',
+    promptZh: '极简构图，干净背景，大量留白，突出主体。',
+    promptEn: 'Minimal composition, clean background, lots of negative space.',
+  },
+  {
+    id: 'lifestyle',
+    label: '生活方式场景',
+    promptZh: '生活方式场景，自然光，真实环境，氛围自然。',
+    promptEn: 'Lifestyle scene, natural lighting, authentic environment.',
+  },
+  {
+    id: 'flatlay',
+    label: '平铺俯拍',
+    promptZh: '俯拍平铺构图，道具有序摆放，风格干净克制。',
+    promptEn: 'Top-down flat lay composition, organized props, clean styling.',
+  },
+  {
+    id: 'cinematic',
+    label: '电影感',
+    promptZh: '电影感布光，浅景深，明暗对比更强，质感突出。',
+    promptEn: 'Cinematic lighting, shallow depth of field, dramatic contrast.',
+  },
+  {
+    id: 'pastel',
+    label: '柔和马卡龙',
+    promptZh: '柔和马卡龙配色，光线温柔，渐变细腻，氛围清新。',
+    promptEn: 'Soft pastel palette, gentle lighting, smooth gradients.',
+  },
 ];
 
-function sceneHint(scene?: string) {
-  if (scene === 'detail') return 'Commercial product detail image. Clean composition with adequate negative space for potential copy.';
+function sceneHint(scene?: string, language?: GenerationContext['language']) {
+  if (language === 'zh') {
+    if (scene === 'detail') return '商品详情图风格，构图干净，保留适度留白以便后续加文案。';
+    if (scene === 'crossborder') return '跨境电商商品图风格，主体清晰，棚拍质感，灯光专业。';
+    if (scene === 'brand') return '品牌视觉主KV风格，光线统一，质感高级，色调协调。';
+    return '单品主图风格，棚拍质感，焦点清晰，突出主体。';
+  }
+  if (scene === 'detail')
+    return 'Commercial product detail image. Clean composition with adequate negative space for potential copy.';
   if (scene === 'crossborder') return 'Cross-border e-commerce product photo. Clear subject, professional studio lighting.';
   if (scene === 'brand') return 'Brand key visual. Consistent lighting, premium studio look, cohesive palette.';
   return 'Single product hero shot. Professional studio lighting, sharp focus.';
 }
 
-function platformHint(platformId?: string) {
-  if (platformId === 'amazon') {
-    return 'Amazon compliant. Pure white background, product centered, realistic shadows, no extra text.';
-  }
+function platformHint(platformId?: string, language?: GenerationContext['language']) {
   if (!platformId) return '';
+  const pid = (platformId ?? '').trim().toLowerCase();
+
+  if (language === 'zh') {
+    if (pid === 'amazon')
+      return '符合亚马逊主图风格：纯白背景（RGB 255,255,255），主体居中且占画面 85% 以上，真实阴影，不要额外文字/水印/Logo/边框，不要不存在的配件。';
+    if (pid === 'temu')
+      return '符合 Temu 主图风格：1:1 方图，背景尽量纯白或干净实景，严禁中文字符，禁止促销贴纸/边框/大面积文字，实物清晰，色彩真实。';
+    if (pid === 'tiktok')
+      return '符合 TikTok Shop 风格：移动端友好构图，主图建议 1:1 且背景干净；营销/详情图可用 3:4 或 9:16 竖屏比例，画面自然真实，突出主体。';
+    if (pid === 'shopee')
+      return '符合 Shopee 风格：主体清晰，背景建议白底或干净背景，画面整洁不过度堆叠信息，避免明显水印与大面积遮挡。';
+    if (pid === 'lazada')
+      return '符合 Lazada 风格：主体清晰，背景建议白底或干净背景，构图简洁，避免边框水印和大段文字遮挡。';
+    if (pid === 'aliexpress')
+      return '符合 AliExpress 风格：主图建议白底或干净背景，主体清晰，减少文字遮挡与花哨装饰，避免水印与边框。';
+    if (pid === 'ebay')
+      return '符合 eBay 规范：禁止任何文字、边框、Logo 与水印；背景简洁，主体清晰真实，不要占位符或无关元素。';
+    if (pid === 'shein')
+      return '符合 SHEIN 风格：高清、统一视觉风格，背景干净（白/浅灰/干净实景）；服装类避免出现人脸（可用截头或无头构图），避免水印与非品牌 Logo。';
+    return `平台：${platformId}。`;
+  }
+
+  if (pid === 'amazon') return 'Amazon compliant. Pure white background, product centered, realistic shadows, no extra text.';
   return `Platform: ${platformId}.`;
 }
 
@@ -67,11 +124,11 @@ function allowTextHint(allowText: boolean, language?: GenerationContext['languag
   return 'Include clear readable English copy text; avoid garbled letters.';
 }
 
-function styleHint(stylePreset?: string) {
+function styleHint(stylePreset?: string, language?: GenerationContext['language']) {
   const raw = (stylePreset ?? '').trim();
   if (!raw) return '';
   const matched = STYLE_PRESETS.find((s) => s.label === raw || s.id === raw);
-  if (matched) return matched.prompt;
+  if (matched) return language === 'zh' ? matched.promptZh : matched.promptEn;
   return raw;
 }
 
@@ -333,9 +390,9 @@ export function buildPromptWithContext(params: {
   const base = (params.basePrompt ?? '').trim();
   const parts = [
     base,
-    sceneHint(params.context.scene),
-    platformHint(params.context.platformId),
-    styleHint(params.context.stylePreset),
+    sceneHint(params.context.scene, params.context.language),
+    platformHint(params.context.platformId, params.context.language),
+    styleHint(params.context.stylePreset, params.context.language),
     languageHint(params.context.language),
     allowTextHint(params.allowText, params.context.language),
     params.sizeHint ?? '',

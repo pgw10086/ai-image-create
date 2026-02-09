@@ -20,7 +20,7 @@
 
 **3.4 清理功能入口**
 *   **ToolCards**：修改 `src/components/ToolCards.tsx`，移除所有“开发中”的占位卡片（如局部重绘、商品替换等），除非它们已被重构为新功能的入口。
-*   **CapabilityCards**：修改 `src/components/CapabilityCards.tsx`，移除“多平台适配”、“多语言”等暂未实现的功能卡片。
+*   **CapabilityCards**：保留作为“快捷预设入口”（点击一键应用套图预设）；移除与当前版本无关的占位卡片。
 
 ## 2. 代码库检查
 *   运行 `npm run lint` 或 `tsc`，确保移除代码后没有残留未使用的变量或导入（Unused imports/variables）。

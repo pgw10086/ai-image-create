@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { suiteTemplates } from '@/constants/templates';
 import type { SuiteTemplate } from '@/types/suite';
+import { getSuiteShotById } from '@/constants/suiteShots';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export function TemplateSelector({
@@ -24,6 +25,12 @@ export function TemplateSelector({
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {suiteTemplates.map((tpl) => {
           const isSelected = selectedTemplateId === tpl.id;
+          const defaultShotIds = (tpl.defaultShotIds?.length ? tpl.defaultShotIds : tpl.availableShotIds) ?? [];
+          const chips =
+            defaultShotIds.length > 0
+              ? defaultShotIds.map((id) => ({ id, name: getSuiteShotById(id)?.name ?? id }))
+              : (tpl.items ?? []).map((it) => ({ id: it.id, name: it.name }));
+          const count = chips.length;
           return (
             <motion.button
               key={tpl.id}
@@ -44,7 +51,7 @@ export function TemplateSelector({
                   <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
                     <span className="text-white text-sm font-medium">{tpl.name}</span>
                     <span className="px-2 py-0.5 rounded-full text-[10px] bg-white/10 text-white/70 border border-white/10">
-                      {tpl.items.length} 张
+                      {count} 张
                     </span>
                   </div>
                 </div>
@@ -56,7 +63,7 @@ export function TemplateSelector({
 
                 <CardContent className="pt-0">
                   <div className="flex flex-wrap gap-1.5">
-                    {tpl.items.slice(0, 4).map((it) => (
+                    {chips.slice(0, 4).map((it) => (
                       <span
                         key={it.id}
                         className="px-2 py-0.5 rounded-md text-[11px] bg-white/5 text-white/60 border border-white/10"
@@ -64,9 +71,9 @@ export function TemplateSelector({
                         {it.name}
                       </span>
                     ))}
-                    {tpl.items.length > 4 && (
+                    {chips.length > 4 && (
                       <span className="px-2 py-0.5 rounded-md text-[11px] bg-white/5 text-white/50 border border-white/10">
-                        +{tpl.items.length - 4}
+                        +{chips.length - 4}
                       </span>
                     )}
                   </div>

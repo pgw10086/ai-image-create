@@ -1,5 +1,6 @@
 import { generateImage } from '@/lib/api';
 import type { SuiteGenerationResult, SuiteItemResult, SuiteTemplate } from '@/types/suite';
+import { computeGroupGeneration } from '@/lib/generationContext';
 
 function joinPrompt(base: string, suffix: string) {
   const b = (base ?? '').trim();
@@ -21,13 +22,24 @@ export async function generateSuiteItem(params: {
   referenceImages: string[];
   model: string;
   size?: string;
+  imageCount?: number;
+  watermark?: boolean;
   signal?: AbortSignal;
 }) {
+  const group = computeGroupGeneration({
+    requestedCount: params.imageCount ?? 1,
+    referenceCount: params.referenceImages.length,
+    modelId: params.model,
+  });
   const response = await generateImage({
     prompt: params.prompt,
     image: toImageParam(params.referenceImages),
     model: params.model as any,
     size: params.size,
+    watermark: params.watermark,
+    sequential_image_generation: group.sequential_image_generation,
+    sequential_image_generation_options:
+      group.sequential_image_generation === 'auto' ? { max_images: group.maxImages } : undefined,
     signal: params.signal,
   } as any);
 
@@ -43,28 +55,43 @@ export async function generateSuiteItem(params: {
 }
 
 export async function executeSuiteGeneration(params: {
-  template: SuiteTemplate;
+  template?: SuiteTemplate;
+  templateId: string;
+  templateName: string;
   globalPrompt: string;
+  watermark?: boolean;
   referenceImages: string[];
   model: string;
-  size?: string;
   useFirstImageAsReference: boolean;
   concurrency?: number;
-  promptsByItemId?: Record<string, string>;
+  items: Array<
+    Omit<SuiteItemResult, 'status' | 'images' | 'error'> & {
+      status?: SuiteItemResult['status'];
+      images?: SuiteItemResult['images'];
+      error?: SuiteItemResult['error'];
+    }
+  >;
   signal?: AbortSignal;
   deductCredits?: (amount: number) => boolean;
   refundCredits?: (amount: number) => void;
   onItemUpdate?: (itemId: string, patch: Partial<SuiteItemResult>) => void;
 }) {
   const concurrency = Math.max(1, Math.min(4, params.concurrency ?? 2));
-  const promptsByItemId = params.promptsByItemId ?? {};
 
-  const items: SuiteItemResult[] = params.template.items.map((it) => ({
-    id: it.id,
-    name: it.name,
-    prompt: promptsByItemId[it.id] ?? joinPrompt(params.globalPrompt, it.promptSuffix),
-    status: 'pending',
-  }));
+  const items: SuiteItemResult[] =
+    params.items.length > 0
+      ? params.items.map((it) => ({
+          ...it,
+          status: 'pending',
+          images: undefined,
+          error: undefined,
+        }))
+      : (params.template?.items ?? []).map((it) => ({
+          id: it.id,
+          name: it.name,
+          prompt: joinPrompt(params.globalPrompt, it.promptSuffix),
+          status: 'pending',
+        }));
 
   const update = (itemId: string, patch: Partial<SuiteItemResult>) => {
     const idx = items.findIndex((x) => x.id === itemId);
@@ -92,7 +119,9 @@ export async function executeSuiteGeneration(params: {
         prompt: item.prompt,
         referenceImages: refImages,
         model: params.model,
-        size: params.size,
+        size: item.size,
+        imageCount: item.imageCount,
+        watermark: params.watermark,
         signal: params.signal,
       });
 
@@ -127,11 +156,11 @@ export async function executeSuiteGeneration(params: {
   await Promise.all(Array.from({ length: Math.min(concurrency, rest.length) }, () => worker()));
 
   const result: SuiteGenerationResult = {
-    templateId: params.template.id,
-    templateName: params.template.name,
+    templateId: params.templateId,
+    templateName: params.templateName,
     globalPrompt: params.globalPrompt,
     model: params.model,
-    size: params.size,
+    watermark: params.watermark,
     referenceImages: params.referenceImages,
     useFirstImageAsReference: params.useFirstImageAsReference,
     firstImageUrl,

@@ -17,7 +17,8 @@ export interface GenerationTask {
     model: string;
   };
   result?: {
-    images: { url: string; prompt: string }[];
+    images?: { url: string; prompt: string }[];
+    suite?: SuiteGenerationResult;
   };
   error?: string;
 }
@@ -25,10 +26,12 @@ export interface GenerationTask {
 export interface AppState {
   tasks: GenerationTask[];
   credits: number;
+  suitePresetRequest: { presetId: 'detail' | 'brand'; requestedAt: number } | null;
   // Actions
   addTask: (task: GenerationTask) => void;
   updateTaskStatus: (id: string, status: GenerationTask['status'], result?: any) => void;
   deductCredits: (amount: number) => boolean;
+  requestSuitePreset: (presetId: 'detail' | 'brand') => void;
 }
 ```
 
@@ -38,6 +41,10 @@ export interface AppState {
 *   修改 `src/store/appStore.ts`。
 *   废弃原有的 `isGenerating` (boolean)，改为基于 `tasks` 队列的状态派生：`const isGenerating = tasks.some(t => t.status === 'processing')`。
 *   **任务管理**：实现 `addTask` 和 `updateTaskStatus`，确保任务状态流转的可追溯性。
+
+**3.1.1 套图预设请求（用于能力卡一键应用）**
+*   增加 `suitePresetRequest` 与 `requestSuitePreset(presetId)`。
+*   能力卡点击只负责写入“预设请求”；套图页监听并执行：切换模板、写入场景/风格、派生子项提示词。
 
 **3.2 完善输入状态**
 *   将 `uploadedImages` 从简单的图片列表升级为支持“引用权重”或“用途标记”（可选，为未来扩展预留）。
