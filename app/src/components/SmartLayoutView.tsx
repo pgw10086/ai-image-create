@@ -8,7 +8,13 @@ import { PreviewDialog } from './smart-layout/PreviewDialog';
 import { LayoutDescriptionPanel } from './smart-layout/LayoutDescriptionPanel';
 import { generateLayoutSketch, composeLayoutForGeneration } from '@/services/smartLayoutService';
 import { generateImage } from '@/lib/api';
-import { resolveModelId, resolveSizeFromCanvasForModel, resolveSizeFromRatioMode } from '@/lib/generationContext';
+import {
+  hasGeminiApiKeyConfigured,
+  isTaihaoProModel,
+  resolveModelId,
+  resolveSizeFromCanvasForModel,
+  resolveSizeFromRatioMode,
+} from '@/lib/generationContext';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
@@ -209,6 +215,10 @@ export function SmartLayoutView({ className }: { className?: string }) {
 
     try {
       const modelId = resolveModelId(generationContext.model);
+      if (isTaihaoProModel(modelId) && !hasGeminiApiKeyConfigured()) {
+        toast.error('未配置 VITE_GOOGLE_API_KEY，无法使用泰豪生图1.0-pro');
+        return null;
+      }
       const ratioMode = (generationContext.ratioMode ?? '智能比例').trim();
       const fixed = ratioMode !== '智能比例';
       const fixedResolved = fixed ? resolveSizeFromRatioMode({ ratioMode, modelId }) : { size: undefined as string | undefined, hint: '' };

@@ -4,7 +4,14 @@ import { useState } from 'react';
 import { useAppStore } from '@/store/appStore';
 import type { GenerationTask } from '@/store/appStore';
 import { generateImage } from '@/lib/api';
-import { buildPromptWithContext, computeGroupGeneration, resolveModelId, resolveSizeFromRatioMode } from '@/lib/generationContext';
+import {
+  buildPromptWithContext,
+  computeGroupGeneration,
+  hasGeminiApiKeyConfigured,
+  isTaihaoProModel,
+  resolveModelId,
+  resolveSizeFromRatioMode,
+} from '@/lib/generationContext';
 import { useImageUploadPicker } from '@/hooks/useImageUploadPicker';
 import { toast } from 'sonner';
 
@@ -47,6 +54,10 @@ export function InputArea() {
     }
 
     const modelId = resolveModelId(generationContext.model);
+    if (isTaihaoProModel(modelId) && !hasGeminiApiKeyConfigured()) {
+      toast.error('未配置 VITE_GOOGLE_API_KEY，无法使用泰豪生图1.0-pro');
+      return;
+    }
     const { size, hint: sizeHint } = resolveSizeFromRatioMode({ ratioMode: generationContext.ratioMode, modelId });
     const allowText = activeTags.includes('text');
     const basePrompt = (inputValue.trim() || 'product photography, professional e-commerce style').trim();

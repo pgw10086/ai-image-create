@@ -25,7 +25,15 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { MODEL_OPTIONS, RATIO_OPTIONS, STYLE_PRESETS, modelSupportsResolutionToken, resolveModelId } from '@/lib/generationContext';
+import {
+  MODEL_OPTIONS,
+  RATIO_OPTIONS,
+  STYLE_PRESETS,
+  hasGeminiApiKeyConfigured,
+  isModelAvailable,
+  modelSupportsResolutionToken,
+  resolveModelId,
+} from '@/lib/generationContext';
 import { useImageUploadPicker } from '@/hooks/useImageUploadPicker';
 
 interface Platform {
@@ -76,6 +84,7 @@ export function FeatureTags({ variant = 'default' }: { variant?: 'default' | 'su
   const { activeTags, toggleTag, activeTab, generationContext, updateGenerationContext, uploadedImages } = useAppStore();
   const { fileInputRef, handleFileUpload, openPicker } = useImageUploadPicker();
   const modelId = resolveModelId(generationContext.model);
+  const hasGeminiApiKey = hasGeminiApiKeyConfigured();
 
   const selectedPlatform = platforms.find(p => p.id === generationContext.platformId) || platforms[0];
 
@@ -236,7 +245,9 @@ export function FeatureTags({ variant = 'default' }: { variant?: 'default' | 'su
                   {MODEL_OPTIONS.map((m) => (
                     <DropdownMenuItem
                       key={m.id}
+                      disabled={!isModelAvailable(m.id)}
                       onClick={() => {
+                        if (!isModelAvailable(m.id)) return;
                         const nextImageCount = m.supportsGroupGeneration ? generationContext.imageCount : 1;
                         const currentRatioMode = (generationContext.ratioMode ?? '智能比例').trim();
                         let nextRatioMode = currentRatioMode;
@@ -248,7 +259,9 @@ export function FeatureTags({ variant = 'default' }: { variant?: 'default' | 'su
                       }}
                       className="flex items-center justify-between cursor-pointer hover:bg-white/5"
                     >
-                      <span className="text-white/80">{m.label}</span>
+                      <span className={!isModelAvailable(m.id) ? 'text-white/40' : 'text-white/80'}>
+                        {m.label}{!isModelAvailable(m.id) ? '（需配置 VITE_GOOGLE_API_KEY）' : ''}
+                      </span>
                       {m.label === generationContext.model && <span className="text-violet-300">✓</span>}
                     </DropdownMenuItem>
                   ))}
@@ -289,6 +302,7 @@ export function FeatureTags({ variant = 'default' }: { variant?: 'default' | 'su
             const isSeedEdit = modelId.includes('seededit-3.0-i2i');
             const optionDisabled = (ratio: string) => {
               if (isSeedEdit) return ratio !== '智能比例';
+              if (modelId.includes('gemini-3-pro-image-preview') && ratio === '1K') return true;
               if (ratio === '1K') return !modelSupportsResolutionToken(modelId, '1K');
               if (ratio === '2K') return !modelSupportsResolutionToken(modelId, '2K');
               if (ratio === '4K') return !modelSupportsResolutionToken(modelId, '4K');
@@ -454,6 +468,9 @@ export function FeatureTags({ variant = 'default' }: { variant?: 'default' | 'su
       </div>
 
       {/* Bottom Tags Row */}
+      {!hasGeminiApiKey && (
+        <div className="text-xs text-amber-300/80 px-1">泰豪生图1.0-pro 已禁用：请配置 `VITE_GOOGLE_API_KEY`</div>
+      )}
       <div className="flex items-center gap-2 flex-wrap">
         {visibleBottomTags.map((tag, index) => {
           const isActive = isTagActive(tag.id);

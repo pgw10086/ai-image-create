@@ -71,3 +71,9 @@ export default defineConfig([
   },
 ])
 ```
+
+## Environment Variables
+
+- `VITE_VOLC_API_KEY`: Seedream provider API key.
+- `VITE_GOOGLE_API_KEY`: Gemini provider API key used by `泰豪生图1.0-pro`.
+- `VITE_USE_MOCK`: whether to enable mock generation (`true` / `false`).

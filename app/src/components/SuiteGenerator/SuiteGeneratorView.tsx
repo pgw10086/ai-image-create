@@ -8,7 +8,13 @@ import type { SuiteTemplate } from '@/types/suite';
 import type { SuiteItemResult, SuiteShotDefinition } from '@/types/suite';
 import { executeSuiteGeneration, generateSuiteItem } from '@/services/suiteGenerationService';
 import { TemplateSelector } from './TemplateSelector';
-import { buildPromptWithContext, MODEL_OPTIONS, resolveModelId, resolveSizeFromRatioMode, STYLE_PRESETS } from '@/lib/generationContext';
+import {
+  buildPromptWithContext,
+  hasGeminiApiKeyConfigured,
+  isTaihaoProModel,
+  MODEL_OPTIONS, resolveModelId,
+  resolveSizeFromRatioMode, STYLE_PRESETS,
+} from '@/lib/generationContext';
 import { useImageUploadPicker } from '@/hooks/useImageUploadPicker';
 import { getSuiteShotById } from '@/constants/suiteShots';
 import { Button } from '@/components/ui/button';
@@ -400,6 +406,10 @@ export function SuiteGeneratorView() {
 
     try {
       const modelId = resolveModelId(generationContext.model);
+      if (isTaihaoProModel(modelId) && !hasGeminiApiKeyConfigured()) {
+        toast.error('未配置 VITE_GOOGLE_API_KEY，无法使用泰豪生图1.0-pro');
+        return;
+      }
       const baseReferenceImages = uploadedImages.map((img) => img.url);
       const firstImageUrl = suiteItems[0]?.images?.[0]?.url;
       const refImages =
@@ -456,6 +466,10 @@ export function SuiteGeneratorView() {
     setActiveSuiteTaskId(taskId);
 
     const modelId = resolveModelId(generationContext.model);
+    if (isTaihaoProModel(modelId) && !hasGeminiApiKeyConfigured()) {
+      toast.error('未配置 VITE_GOOGLE_API_KEY，无法使用泰豪生图1.0-pro');
+      return;
+    }
     const globalPrompt = baseGlobal;
 
     const newTask: GenerationTask = {

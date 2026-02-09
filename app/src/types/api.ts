@@ -3,7 +3,7 @@ export interface GenerateImageParams {
   prompt: string;
   image?: string | string[]; // Base64 或 URL
   size?: string; // e.g. "2048x2048"
-  model?: 'doubao-seedream-4.5' | 'doubao-seedream-4.0' | 'doubao-seedream-4-5-251128';
+  model?: string;
   watermark?: boolean;
   sequential_image_generation?: 'auto' | 'disabled';
   sequential_image_generation_options?: {
@@ -35,10 +35,6 @@ export interface GenerateImageResponse {
 // Seedream API 请求结构 (内部使用)
 export type SeedreamModel =
   | 'doubao-seedream-4-5-251128'
-  | 'doubao-seedream-4.5'
-  | 'doubao-seedream-4.0'
-  | 'doubao-seedream-3.0-t2i'
-  | 'doubao-seededit-3.0-i2i'
   | string;
 
 export type ImageSize =

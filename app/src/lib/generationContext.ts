@@ -1,6 +1,42 @@
 import type { GenerationContext } from '@/store/appStore';
 import { calculateOptimalSize } from '@/lib/utils';
 
+export const TAIHAO_FLASH_MODEL_LABEL = '泰豪生图1.0';
+export const TAIHAO_FLASH_MODEL_ID = 'doubao-seedream-4-5-251128';
+export const TAIHAO_PRO_MODEL_LABEL = '泰豪生图1.0-pro';
+export const TAIHAO_PRO_MODEL_ID = 'gemini-3-pro-image-preview';
+const LEGACY_TAIHAO_MODEL_LABEL = '泰豪生图1.0';
+const LEGACY_TAIHAO_FLASH_LABEL = '泰豪生图1.0-flash';
+
+export function hasGeminiApiKeyConfigured() {
+  return Boolean((import.meta.env.VITE_GOOGLE_API_KEY || '').trim());
+}
+
+export function isTaihaoProModel(model: string) {
+  const trimmed = (model ?? '').trim();
+  return trimmed === TAIHAO_PRO_MODEL_LABEL || trimmed === TAIHAO_PRO_MODEL_ID;
+}
+
+export function isTaihaoFlashModel(model: string) {
+  const trimmed = (model ?? '').trim();
+  return (
+    trimmed === TAIHAO_FLASH_MODEL_LABEL ||
+    trimmed === TAIHAO_FLASH_MODEL_ID ||
+    trimmed === LEGACY_TAIHAO_MODEL_LABEL ||
+    trimmed === LEGACY_TAIHAO_FLASH_LABEL
+  );
+}
+
+export function isTaihaoModel(model: string) {
+  return isTaihaoProModel(model) || isTaihaoFlashModel(model);
+}
+
+export function isModelAvailable(model: string) {
+  if (isTaihaoProModel(model)) return hasGeminiApiKeyConfigured();
+  return true;
+}
+
+
 export type ModelOption = {
   id: string;
   label: string;
@@ -8,12 +44,28 @@ export type ModelOption = {
 };
 
 export const MODEL_OPTIONS: ModelOption[] = [
-  { id: 'doubao-seedream-4-5-251128', label: '泰豪生图1.0', supportsGroupGeneration: true },
-  { id: 'doubao-seedream-4.5', label: 'Seedream 4.5', supportsGroupGeneration: true },
-  { id: 'doubao-seedream-4.0', label: 'Seedream 4.0', supportsGroupGeneration: true },
-  { id: 'doubao-seedream-3.0-t2i', label: 'Seedream 3.0（文生图）', supportsGroupGeneration: false },
-  { id: 'doubao-seededit-3.0-i2i', label: 'SeedEdit 3.0（图生图）', supportsGroupGeneration: false },
+  { id: TAIHAO_PRO_MODEL_ID, label: TAIHAO_PRO_MODEL_LABEL, supportsGroupGeneration: true },
+  { id: TAIHAO_FLASH_MODEL_ID, label: TAIHAO_FLASH_MODEL_LABEL, supportsGroupGeneration: true },
 ];
+
+export function getDefaultModelId() {
+  return TAIHAO_FLASH_MODEL_ID;
+}
+
+export function getDefaultModelLabel() {
+  return TAIHAO_FLASH_MODEL_LABEL;
+}
+
+export function getModelLabelById(modelId: string) {
+  const model = MODEL_OPTIONS.find((m) => m.id === modelId);
+  return model?.label;
+}
+
+export function ensureAvailableModelLabel(model?: string) {
+  const normalizedId = resolveModelId(model ?? '');
+  if (!isModelAvailable(normalizedId)) return getDefaultModelLabel();
+  return getModelLabelById(normalizedId) || getDefaultModelLabel();
+}
 
 export const RATIO_OPTIONS: Array<{ id: string; label: string }> = [
   { id: '智能比例', label: '智能比例' },
@@ -136,18 +188,24 @@ export function resolveModelId(model: string) {
   const trimmed = (model ?? '').trim();
   const opt = MODEL_OPTIONS.find((m) => m.id === trimmed || m.label === trimmed);
   if (opt) return opt.id;
-  if (trimmed === '泰豪生图1.0') return 'doubao-seedream-4-5-251128';
-  return trimmed || 'doubao-seedream-4-5-251128';
+  if (isTaihaoProModel(trimmed)) return TAIHAO_PRO_MODEL_ID;
+  if (isTaihaoFlashModel(trimmed)) return TAIHAO_FLASH_MODEL_ID;
+  return getDefaultModelId();
 }
 
 export function modelSupportsGroupGeneration(modelId: string) {
+  if (isTaihaoProModel(modelId)) return true;
+  if (isTaihaoFlashModel(modelId)) return true;
+  if (isTaihaoModel(modelId)) return true;
   const opt = MODEL_OPTIONS.find((m) => m.id === modelId);
   if (opt) return opt.supportsGroupGeneration;
   const m = (modelId ?? '').toLowerCase();
-  return m.includes('seedream-4.5') || m.includes('seedream-4.0') || m.includes('seedream-4-5');
+  return m.includes('seedream-4-5') || m.includes('gemini-3-pro-image-preview');
 }
 
 export function modelSupportsResolutionToken(modelId: string, token: '1K' | '2K' | '4K') {
+  if (isTaihaoProModel(modelId)) return true;
+  if (isTaihaoFlashModel(modelId)) return token !== '1K';
   const m = (modelId ?? '').toLowerCase();
   if (token === '1K') return m.includes('seedream-4.0');
   if (token === '2K' || token === '4K') return m.includes('seedream-4.0') || m.includes('seedream-4.5') || m.includes('seedream-4-5');
@@ -297,6 +355,7 @@ export function resolveSizeFromCanvasForModel(params: { canvasWidth: number; can
 export function resolveSizeFromRatioMode(params: { ratioMode?: string; modelId?: string }) {
   const ratioMode = (params.ratioMode ?? '智能比例').trim();
   const modelId = (params.modelId ?? '').trim();
+  const isGemini = modelId.includes('gemini-3-pro-image-preview');
   const is45 = modelId.includes('4.5') || modelId.includes('4-5');
   const is40 = modelId.includes('4.0');
   const is30 = modelId.includes('3.0-t2i');
@@ -326,6 +385,7 @@ export function resolveSizeFromRatioMode(params: { ratioMode?: string; modelId?:
 
   if (ratioMode === '1K' || ratioMode === '2K' || ratioMode === '4K') {
     if (isEdit30) return { size: undefined, hint: 'Use adaptive output size (image-to-image).' };
+    if (isGemini) return { size: ratioMode, hint: `Resolution: ${ratioMode}.` };
     if (is30) {
       const size = ratioMode === '4K' ? '2048x2048' : ratioMode === '2K' ? '2048x2048' : '1024x1024';
       return { size, hint: `Output size: ${size}.` };
@@ -343,7 +403,7 @@ export function resolveSizeFromRatioMode(params: { ratioMode?: string; modelId?:
   }
 
   if (ratioMode === '智能比例') {
-    const size = isEdit30 ? undefined : is30 ? '1024x1024' : is40 || is45 ? '2K' : undefined;
+    const size = isEdit30 ? undefined : is30 ? '1024x1024' : isGemini || is40 || is45 ? '2K' : undefined;
     return { size, hint: 'Choose the best aspect ratio automatically for e-commerce.' };
   }
 
@@ -357,6 +417,7 @@ export function resolveSizeFromRatioMode(params: { ratioMode?: string; modelId?:
   const size = map[ratioMode];
   if (size) return { size, hint: `Output size: ${size}. Aspect ratio ${ratioMode}.` };
 
+  if (isGemini) return { size: '2K', hint: 'Resolution: 2K.' };
   if (is45 || is40) return { size: '2048x2048', hint: 'Output size: 2048x2048. Aspect ratio 1:1.' };
   return { size: undefined, hint: '' };
 }

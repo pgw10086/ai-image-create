@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { SuiteGenerationResult } from '../types/suite';
 import type { SmartLayoutAsset } from '@/types/smartLayout';
+import { ensureAvailableModelLabel, getDefaultModelLabel } from '@/lib/generationContext';
 
 function hashStringFNV1a(input: string) {
   let hash = 2166136261;
@@ -122,14 +123,18 @@ export const useAppStore = create<AppState>()(
       generationContext: {
         platformId: 'amazon',
         language: 'en',
-        model: '泰豪生图1.0',
+        model: getDefaultModelLabel(),
         imageCount: 6,
         ratioMode: '智能比例',
         stylePreset: undefined,
         scene: 'detail',
       },
       updateGenerationContext: (partial) => set((state) => ({
-        generationContext: { ...state.generationContext, ...partial },
+        generationContext: {
+          ...state.generationContext,
+          ...partial,
+          model: ensureAvailableModelLabel(partial.model ?? state.generationContext.model),
+        },
       })),
       
       // Uploaded images
@@ -206,19 +211,12 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'app-storage',
-      version: 3,
+      version: 4,
       migrate: (persistedState: any) => {
         const state = persistedState ?? {};
-        const model = state?.generationContext?.model;
-        if (
-          !model ||
-          model === 'Seedream 4.5' ||
-          model === 'doubao-seedream-4.5' ||
-          model === '泰豪生图1.0' ||
-          model === 'doubao-seedream-4-5-251128'
-        ) {
-          state.generationContext = { ...(state.generationContext ?? {}), model: '泰豪生图1.0' };
-        }
+        const current = state?.generationContext?.model;
+        const safeModel = !current ? getDefaultModelLabel() : ensureAvailableModelLabel(current);
+        state.generationContext = { ...(state.generationContext ?? {}), model: safeModel };
         return state;
       },
       partialize: (state) => ({
