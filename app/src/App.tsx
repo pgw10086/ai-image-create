@@ -14,6 +14,13 @@ import { SmartLayoutPresets } from './components/smart-layout/SmartLayoutPresets
 import { SuiteGeneratorView } from './components/SuiteGenerator/SuiteGeneratorView';
 import { SuiteResultView } from './components/SuiteGenerator/SuiteResultView';
 import { useAppStore } from './store/appStore';
+import defaultSmartLayoutTemplatesRaw from '@/default-smart-layout-templates/smart-layout-templates-1770704133755.json?raw';
+import { ensureDefaultSmartLayoutTemplatesImported } from '@/lib/smartLayoutPersistence';
+
+ensureDefaultSmartLayoutTemplatesImported({
+  raw: defaultSmartLayoutTemplatesRaw,
+  sourceId: 'smart-layout-templates-1770704133755.json',
+});
 
 function App() {
   const { activeTab, domesticMode, smartLayoutFocusMode } = useAppStore();

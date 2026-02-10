@@ -12,4 +12,6 @@ app/.env
 app/.env.*
 !app/.env.example
 
+/.idea/
 app/package-lock.json
+.trae/rules/

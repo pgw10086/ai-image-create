@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "exportedAt": 1770704133755,
+  "templates": [
+    {
+      "schemaVersion": 1,
+      "id": "3d94393e-dc1e-474c-b110-e4fa7c09b883",
+      "name": "丝带",
+      "createdAt": 1770703934179,
+      "updatedAt": 1770703934179,
+      "snapshotDataUrl": "data:image/png;base64,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",
+      "payload": {
+        "canvasSize": {
+          "width": 768,
+          "height": 1280
+        },
+        "zones": [
+          {
+            "id": "3e9164be-10ee-4512-af19-e96cdca98723",
+            "x": 21.8,
+            "y": 167,
+            "width": 718,
+            "height": 161,
+            "zIndex": 1,
+            "type": "prop",
+            "semanticColor": "#86EFAC",
+            "prompt": "Place title text exactly: “PRODUCT DETAILS”. All caps, classic serif, centered, light-blue color, sharp and readable.",
+            "sketchColor": "#2CF26E",
+            "bboxNormalized": {
+              "x": 0.028385416666666666,
+              "y": 0.13046875,
+              "w": 0.9348958333333334,
+              "h": 0.12578125
+            },
+            "locationHint": "Top-Center"
+          },
+          {
+            "id": "645638ee-187a-406e-881f-aabd2d848fe8",
+            "x": 24.8,
+            "y": 343,
+            "width": 716,
+            "height": 913,
+            "zIndex": 2,
+            "type": "background",
+            "semanticColor": "#E2E8F0",
+            "prompt": "沿画布边缘绘制一个优雅的细薄浅蓝色圆角矩形框架，\n2）在底部设置一个简洁的浅蓝色渐变区域用于标注，\n3）左侧边框应该更粗，让背景更立体，如同相框一样。",
+            "sketchColor": "#F4F5F6",
+            "bboxNormalized": {
+              "x": 0.03229166666666667,
+              "y": 0.26796875,
+              "w": 0.9322916666666666,
+              "h": 0.71328125
+            },
+            "locationHint": "Center-Center"
+          },
+          {
+            "id": "8798ec3f-0f3e-4133-b140-6189cfb4d5b5",
+            "x": 38.8,
+            "y": 364,
+            "width": 680,
+            "height": 752,
+            "zIndex": 3,
+            "type": "main",
+            "semanticColor": "#FCA5A5",
+            "prompt": "明亮的白色壁炉/壁架內景背景。在壁炉上由同一种材料制成的水平派对花环（如参考图所示）。花环以柔和的曲线垂落，符合物理定律。在頂角附近添加一些淡雅的禮物盒。在主場景底部放置幾個淡雅的氣球（淡藍色、柔和粉色、白色）。保持清潔，不要添加其他文字，不要添加標誌。",
+            "sketchColor": "#F23636",
+            "bboxNormalized": {
+              "x": 0.05052083333333333,
+              "y": 0.284375,
+              "w": 0.8854166666666666,
+              "h": 0.5875
+            },
+            "locationHint": "Center-Center"
+          },
+          {
+            "id": "8eaefc25-bbeb-4638-a1e2-02a22f9be646",
+            "x": 53.8,
+            "y": 1062.4,
+            "width": 646,
+            "height": 168,
+            "zIndex": 4,
+            "type": "prop",
+            "semanticColor": "#86EFAC",
+            "prompt": "均匀分布的三个大小相等的圆形框架，其轮廓为细的中浅蓝色，水平排列。 与主体Region 3重叠，垂直方向1/3圆遮住主体部分。\n在这三个圆形框架内部，生成与产品（如参考图所示）相关的三张清晰的特写照片（使用与参考图相同的缎面纹理和颜色）：左圆圈：背面细节图（手持产品，白色背景）。\n中圆圈：燕尾状尾部剪裁特写。\n右圆圈：由一只手握持的产品，突出展示产品材质。\n在每个圆圈下方，添加浅蓝色经典衬线字体的标题，居中放置在每个圆圈下方：\nLeft: “Back view”\nMiddle: “Swallowtail-tail Design”\nRight: “Soft Silky Luster”",
+            "sketchColor": "#0DC99A",
+            "bboxNormalized": {
+              "x": 0.07005208333333333,
+              "y": 0.8300000000000001,
+              "w": 0.8411458333333334,
+              "h": 0.13125
+            },
+            "locationHint": "Bottom-Center"
+          }
+        ],
+        "settings": {
+          "layoutSketchRenderMode": "segmentation",
+          "showSketchPreviewWithImages": true,
+          "enableRegionPrompts": true,
+          "enableDepthTree": true
+        },
+        "generationContextSnapshot": {
+          "platformId": "amazon",
+          "language": "en",
+          "model": "泰豪生图1.0-pro",
+          "imageCount": 1,
+          "ratioMode": "智能比例",
+          "scene": "crossborder",
+          "stylePreset": "品牌模型"
+        }
+      }
+    }
+  ]
+}

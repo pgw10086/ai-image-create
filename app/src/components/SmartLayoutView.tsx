@@ -26,18 +26,31 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuLabel,
+  DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Wand2, RotateCcw, Eye, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, SlidersHorizontal, Info } from 'lucide-react';
+import { Wand2, RotateCcw, Eye, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, SlidersHorizontal, Info, Save, FolderOpen, Upload, Download, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { enrichZonesForPrompt } from '@/lib/smartLayoutUtils';
 import { useAppStore } from '@/store/appStore';
+import {
+  createSmartLayoutTemplateExportPayload,
+  deleteSmartLayoutTemplate,
+  downloadJsonFile,
+  importSmartLayoutTemplatesFromJson,
+  loadSmartLayoutTemplates,
+  loadSmartLayoutDraft,
+  saveSmartLayoutDraft,
+  clearSmartLayoutDraft,
+  upsertSmartLayoutTemplate,
+} from '@/lib/smartLayoutPersistence';
+import type { SmartLayoutTemplateV1 } from '@/types/smartLayout';
 
 export function SmartLayoutView({ className }: { className?: string }) {
   const canvasRef = useRef<SmartCanvasHandle>(null);
-  const { smartLayoutFocusMode, setSmartLayoutFocusMode, generationContext, smartLayoutAssets, addSmartLayoutAsset } = useAppStore();
+  const { smartLayoutFocusMode, setSmartLayoutFocusMode, generationContext, updateGenerationContext, smartLayoutAssets, addSmartLayoutAsset, clearSmartLayoutAssets } = useAppStore();
   const [zones, setZones] = useState<LayoutZone[]>([]);
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [drawMode, setDrawMode] = useState(() => {
@@ -56,7 +69,9 @@ export function SmartLayoutView({ className }: { className?: string }) {
         const height = Math.max(200, Math.round(parsed.height || 800));
         return { width, height };
       }
-    } catch {}
+    } catch {
+      return { width: 800, height: 800 };
+    }
     return { width: 800, height: 800 };
   });
   const [canvasWidthInput, setCanvasWidthInput] = useState(String(canvasSize.width));
@@ -67,13 +82,17 @@ export function SmartLayoutView({ className }: { className?: string }) {
     setCanvasHeightInput(String(canvasSize.height));
     try {
       localStorage.setItem('smart_layout_canvas_size', JSON.stringify(canvasSize));
-    } catch {}
+    } catch {
+      return;
+    }
   }, [canvasSize.width, canvasSize.height]);
 
   useEffect(() => {
     try {
       localStorage.setItem('smart_layout_draw_mode', String(drawMode));
-    } catch {}
+    } catch {
+      return;
+    }
   }, [drawMode]);
   
   // Generation State
@@ -103,6 +122,28 @@ export function SmartLayoutView({ className }: { className?: string }) {
   const [variantResults, setVariantResults] = useState<Array<{ style: string; url: string }>>([]);
   const [variantOpen, setVariantOpen] = useState(false);
 
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+  const [templates, setTemplates] = useState<SmartLayoutTemplateV1[]>(() => {
+    try {
+      return loadSmartLayoutTemplates();
+    } catch {
+      return [];
+    }
+  });
+  const [templateName, setTemplateName] = useState('');
+  const [overwriteTemplateId, setOverwriteTemplateId] = useState<string>('new');
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const [draftOfferOpen, setDraftOfferOpen] = useState(false);
+  const [draftExists, setDraftExists] = useState(() => {
+    try {
+      return Boolean(loadSmartLayoutDraft());
+    } catch {
+      return false;
+    }
+  });
+  const [pendingDraftUpdatedAt, setPendingDraftUpdatedAt] = useState<number | null>(null);
+
   const [settings, setSettings] = useState<SmartLayoutSettings>(() => {
     try {
       const raw = localStorage.getItem('smart_layout_settings');
@@ -115,14 +156,18 @@ export function SmartLayoutView({ className }: { className?: string }) {
           enableDepthTree: parsed.enableDepthTree !== false,
         };
       }
-    } catch {}
+    } catch {
+      return { layoutSketchRenderMode: 'collage', showSketchPreviewWithImages: true, enableRegionPrompts: true, enableDepthTree: true };
+    }
     return { layoutSketchRenderMode: 'collage', showSketchPreviewWithImages: true, enableRegionPrompts: true, enableDepthTree: true };
   });
 
   useEffect(() => {
     try {
       localStorage.setItem('smart_layout_settings', JSON.stringify(settings));
-    } catch {}
+    } catch {
+      return;
+    }
   }, [settings]);
 
   const assetsById = useMemo(() => new Map(smartLayoutAssets.map((a) => [a.id, a.dataUrl])), [smartLayoutAssets]);
@@ -140,7 +185,9 @@ export function SmartLayoutView({ className }: { className?: string }) {
   useEffect(() => {
     try {
       localStorage.setItem('smart_layout_side_panel_open', String(sidePanelOpen));
-    } catch {}
+    } catch {
+      return;
+    }
   }, [sidePanelOpen]);
 
   useEffect(() => {
@@ -219,6 +266,18 @@ export function SmartLayoutView({ className }: { className?: string }) {
         toast.error('未配置 VITE_GOOGLE_API_KEY，无法使用泰豪生图1.0-pro');
         return null;
       }
+      const normalizePlatformId = (v: string | undefined) => {
+        if (!v) return undefined;
+        if (v === 'amazon' || v === 'temu' || v === 'shopee' || v === 'tiktok' || v === 'aliexpress' || v === 'alibaba') return v;
+        return undefined;
+      };
+      const normalizeScene = (v: string | undefined) => {
+        if (!v) return 'detail' as const;
+        if (v === 'single' || v === 'detail' || v === 'crossborder' || v === 'brand') return v;
+        return 'detail' as const;
+      };
+      const platformIdNormalized = normalizePlatformId(generationContext.platformId);
+      const sceneNormalized = normalizeScene(generationContext.scene);
       const ratioMode = (generationContext.ratioMode ?? '智能比例').trim();
       const fixed = ratioMode !== '智能比例';
       const fixedResolved = fixed ? resolveSizeFromRatioMode({ ratioMode, modelId }) : { size: undefined as string | undefined, hint: '' };
@@ -236,9 +295,9 @@ export function SmartLayoutView({ className }: { className?: string }) {
         renderMode: settings.layoutSketchRenderMode,
         assets: smartLayoutAssets,
         context: {
-          scene: (generationContext.scene as any) || 'detail',
-          platformId: generationContext.platformId as any,
-          platform: generationContext.platformId as any,
+          scene: sceneNormalized,
+          platformId: platformIdNormalized,
+          platform: platformIdNormalized,
           language: generationContext.language,
           model: modelId,
           ratioMode: fixed ? 'fixed' : 'smart',
@@ -260,7 +319,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
         model: modelId,
         sizeHint,
       };
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to prepare generation:', error);
       toast.error('生成预览失败');
       return null;
@@ -312,7 +371,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
           prompt,
           image: [previewData.generationSketch, ...previewData.referenceImages],
           size,
-          model: previewData.model as any,
+          model: previewData.model,
           sequential_image_generation: 'disabled',
           stream: false,
         });
@@ -328,8 +387,9 @@ export function SmartLayoutView({ className }: { className?: string }) {
         setVariantOpen(true);
         toast.success(`已生成 ${results.length} 张变体`);
       }
-    } catch (error: any) {
-      toast.error(`变体生成失败: ${error?.message || '未知错误'}`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : '未知错误';
+      toast.error(`变体生成失败: ${message}`);
     } finally {
       setIsGenerating(false);
     }
@@ -344,7 +404,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
         prompt,
         image: [data.generationSketch, ...data.referenceImages],
         size,
-        model: data.model as any,
+        model: data.model,
         sequential_image_generation: 'disabled',
         stream: false,
       });
@@ -360,15 +420,182 @@ export function SmartLayoutView({ className }: { className?: string }) {
       } else {
         throw new Error(response.message || 'No image data returned');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Generation failed:', error);
-      toast.error(`生成失败: ${error.message || '未知错误'}`);
+      const message = error instanceof Error ? error.message : '未知错误';
+      toast.error(`生成失败: ${message}`);
     } finally {
       setIsGenerating(false);
     }
   };
 
   const rootHeightClass = className && /(^|\s)h-/.test(className) ? '' : 'h-[calc(100dvh-220px)]';
+
+  const refreshTemplates = () => {
+    setTemplates(loadSmartLayoutTemplates());
+  };
+
+  const applyTemplate = (t: SmartLayoutTemplateV1) => {
+    const nextCanvasSize = t.payload.canvasSize;
+    setCanvasSize(nextCanvasSize);
+    setZones(applyZoneEnrichment(t.payload.zones || []));
+    setSettings(t.payload.settings);
+    if (t.payload.generationContextSnapshot) {
+      updateGenerationContext(t.payload.generationContextSnapshot);
+    }
+    setSelectedZoneId(null);
+    canvasRef.current?.clearSelection();
+    setResultImage(null);
+    setResultOpen(false);
+    toast.success(`已应用模板：${t.name}`);
+  };
+
+  const draftCheckedRef = useRef(false);
+  useEffect(() => {
+    if (draftCheckedRef.current) return;
+    draftCheckedRef.current = true;
+    try {
+      const draft = loadSmartLayoutDraft();
+      if (!draft) return;
+      if (zones.length > 0) return;
+      setPendingDraftUpdatedAt(draft.updatedAt);
+      setDraftOfferOpen(true);
+    } catch {
+      return;
+    }
+  }, [zones.length]);
+
+  const applyDraft = () => {
+    const draft = loadSmartLayoutDraft();
+    if (!draft) {
+      toast.error('未找到可恢复的草稿');
+      setDraftExists(false);
+      setDraftOfferOpen(false);
+      return;
+    }
+    setCanvasSize(draft.canvasSize);
+    setZones(applyZoneEnrichment(draft.zones || []));
+    setSettings(draft.settings);
+    if (draft.generationContextSnapshot) {
+      updateGenerationContext(draft.generationContextSnapshot);
+    }
+    setSelectedZoneId(null);
+    canvasRef.current?.clearSelection();
+    setResultImage(null);
+    setResultOpen(false);
+    setDraftOfferOpen(false);
+    toast.success('已恢复草稿');
+  };
+
+  const handleOpenSaveTemplate = () => {
+    setOverwriteTemplateId('new');
+    const fallbackName = `模板 ${new Date().toLocaleString()}`;
+    setTemplateName(fallbackName);
+    setSaveTemplateOpen(true);
+  };
+
+  const handleSaveTemplate = async () => {
+    if (zones.length === 0) {
+      toast.error('请先绘制至少一个区域');
+      return;
+    }
+    const name = (templateName || '').trim();
+    if (!name) {
+      toast.error('请输入模板名称');
+      return;
+    }
+    try {
+      const max = 360;
+      const ratio = canvasSize.width / Math.max(1, canvasSize.height);
+      const thumbW = ratio >= 1 ? max : Math.max(120, Math.round(max * ratio));
+      const thumbH = ratio >= 1 ? Math.max(120, Math.round(max / ratio)) : max;
+      const snapshotDataUrl = await generateLayoutSketch(
+        { zones: normalizedZones, canvasSize, assets: smartLayoutAssets },
+        'segmentation',
+        `${thumbW}x${thumbH}`
+      );
+      const { strippedSnapshots } = upsertSmartLayoutTemplate({
+        id: overwriteTemplateId !== 'new' ? overwriteTemplateId : undefined,
+        name,
+        snapshotDataUrl,
+        payload: {
+          canvasSize,
+          zones: normalizedZones,
+          settings,
+          generationContextSnapshot: generationContext,
+        },
+      });
+      refreshTemplates();
+      setSaveTemplateOpen(false);
+      const base = overwriteTemplateId !== 'new' ? '模板已更新' : '模板已保存';
+      if (strippedSnapshots) {
+        toast.message(`${base}（本地空间不足，已移除预览图以确保落盘）`);
+      } else {
+        toast.success(base);
+      }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : '未知错误';
+      toast.error(`保存失败：${message}`);
+    }
+  };
+
+  const handleExportAllTemplates = () => {
+    const payload = createSmartLayoutTemplateExportPayload(loadSmartLayoutTemplates());
+    downloadJsonFile(`smart-layout-templates-${Date.now()}.json`, payload);
+    toast.success('已导出模板库');
+  };
+
+  const handleImportTemplates = async (file: File) => {
+    try {
+      const raw = await file.text();
+      const { imported, importedTemplates, next, persisted, strippedSnapshots } = importSmartLayoutTemplatesFromJson(raw);
+      setTemplates(next);
+      if (imported <= 0) {
+        toast.error('未识别到可导入的模板数据');
+        return;
+      }
+      if (!persisted) {
+        toast.error('导入解析成功，但本地存储空间不足，未能保存到模板库（可先删除旧模板或导入时不带预览图）');
+        return;
+      }
+      const importedSorted = importedTemplates.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      const firstImported = importedSorted[0];
+      if (firstImported && zones.length === 0) {
+        applyTemplate(firstImported);
+      } else {
+        setTemplatesOpen(true);
+      }
+      if (strippedSnapshots) {
+        toast.message(`已导入 ${imported} 个模板（本地空间不足，已移除预览图以确保落盘）`);
+        return;
+      }
+      toast.success(`已导入 ${imported} 个模板`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : '未知错误';
+      toast.error(`导入失败：${message}`);
+    } finally {
+      if (importInputRef.current) importInputRef.current.value = '';
+    }
+  };
+
+  const draftSaveTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (zones.length === 0) return;
+    if (draftSaveTimerRef.current) window.clearTimeout(draftSaveTimerRef.current);
+    draftSaveTimerRef.current = window.setTimeout(() => {
+      saveSmartLayoutDraft({
+        canvasSize,
+        zones: normalizedZones,
+        settings,
+        generationContextSnapshot: generationContext,
+      });
+      setDraftExists(true);
+    }, 700);
+    return () => {
+      if (draftSaveTimerRef.current) window.clearTimeout(draftSaveTimerRef.current);
+    };
+  }, [zones.length, normalizedZones, canvasSize, settings, generationContext]);
 
   return (
     <div className={["relative w-full rounded-xl border border-white/10 bg-[#0a0a0f] overflow-hidden shadow-inner", rootHeightClass, className].filter(Boolean).join(' ')}>
@@ -479,6 +706,71 @@ export function SmartLayoutView({ className }: { className?: string }) {
             </DropdownMenu>
           </div>
 
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 border-white/10 text-white/70 hover:text-white hover:bg-white/10">
+                <Save className="mr-2 h-4 w-4" />
+                保存/复用
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="bg-[#1c1c21] border-white/10 text-white">
+              <DropdownMenuItem onSelect={(e) => { e.preventDefault(); handleOpenSaveTemplate(); }}>
+                <Save className="h-4 w-4" />
+                保存为模板
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={(e) => { e.preventDefault(); refreshTemplates(); setTemplatesOpen(true); }}>
+                <FolderOpen className="h-4 w-4" />
+                打开模板库
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                disabled={!draftExists}
+                onSelect={(e) => {
+                  e.preventDefault();
+                  if (!draftExists) return;
+                  setPendingDraftUpdatedAt(loadSmartLayoutDraft()?.updatedAt ?? null);
+                  setDraftOfferOpen(true);
+                }}
+              >
+                <RotateCcw className="h-4 w-4" />
+                恢复草稿
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!draftExists}
+                onSelect={(e) => {
+                  e.preventDefault();
+                  if (!draftExists) return;
+                  clearSmartLayoutDraft();
+                  setDraftExists(false);
+                  toast.success('已清除草稿');
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+                清除草稿
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault();
+                  clearSmartLayoutAssets();
+                  setZones((prev) => prev.map((z) => (z.refImageId ? { ...z, refImageId: undefined } : z)));
+                  toast.success('已清空素材库缓存');
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+                清空素材库缓存
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={(e) => { e.preventDefault(); handleExportAllTemplates(); }}>
+                <Download className="h-4 w-4" />
+                导出全部模板
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={(e) => { e.preventDefault(); importInputRef.current?.click(); }}>
+                <Upload className="h-4 w-4" />
+                导入模板 JSON
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           {resultImage && (
             <Button
               variant="ghost"
@@ -499,6 +791,8 @@ export function SmartLayoutView({ className }: { className?: string }) {
               setResultImage(null);
               setResultOpen(false);
               canvasRef.current?.clearSelection();
+              clearSmartLayoutDraft();
+              setDraftExists(false);
             }}
             className="text-white/60 hover:text-red-400 hover:bg-white/10"
           >
@@ -532,6 +826,17 @@ export function SmartLayoutView({ className }: { className?: string }) {
           </Button>
         </div>
       </div>
+
+      <input
+        ref={importInputRef}
+        type="file"
+        accept="application/json"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleImportTemplates(file);
+        }}
+      />
 
       <div className="absolute top-14 left-0 right-0 bottom-0 flex overflow-hidden bg-[#0a0a0f]">
         <div className="flex-1 overflow-auto flex items-center justify-center p-8">
@@ -724,6 +1029,178 @@ export function SmartLayoutView({ className }: { className?: string }) {
              </div>
            ) : (
              <div className="text-white/60 text-sm">暂无结果</div>
+           )}
+         </DialogContent>
+       </Dialog>
+
+       <Dialog open={draftOfferOpen} onOpenChange={setDraftOfferOpen}>
+         <DialogContent className="sm:max-w-[520px] bg-[#14141a] border-white/10 text-white">
+           <DialogHeader>
+             <DialogTitle>检测到草稿</DialogTitle>
+           </DialogHeader>
+           <div className="text-sm text-white/70">
+             {pendingDraftUpdatedAt ? `上次保存：${new Date(pendingDraftUpdatedAt).toLocaleString()}` : '存在未清理的草稿，是否恢复？'}
+           </div>
+           <div className="flex justify-end gap-2 mt-4">
+             <Button
+               variant="outline"
+               onClick={() => {
+                 clearSmartLayoutDraft();
+                 setDraftExists(false);
+                 setDraftOfferOpen(false);
+                 toast.success('已放弃草稿');
+               }}
+               className="border-white/10 text-white/80 hover:text-white hover:bg-white/10"
+             >
+               放弃
+             </Button>
+             <Button onClick={applyDraft} className="bg-violet-600 hover:bg-violet-700 text-white">
+               恢复
+             </Button>
+           </div>
+         </DialogContent>
+       </Dialog>
+
+       <Dialog open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen}>
+         <DialogContent className="sm:max-w-[560px] bg-[#14141a] border-white/10 text-white">
+           <DialogHeader>
+             <DialogTitle>保存为模板</DialogTitle>
+           </DialogHeader>
+           <div className="space-y-4">
+             <div>
+               <div className="text-xs text-white/70 mb-2">模板名称</div>
+               <Input
+                 value={templateName}
+                 onChange={(e) => setTemplateName(e.target.value)}
+                 className="h-9 bg-white/5 border-white/10 text-white"
+               />
+             </div>
+             <div>
+               <div className="text-xs text-white/70 mb-2">保存方式</div>
+               <Select value={overwriteTemplateId} onValueChange={setOverwriteTemplateId}>
+                 <SelectTrigger className="h-9 bg-white/5 border-white/10 text-white">
+                   <SelectValue placeholder="选择保存方式" />
+                 </SelectTrigger>
+                 <SelectContent className="bg-[#1c1c21] border-white/10 text-white">
+                   <SelectItem value="new" className="focus:bg-white/10 focus:text-white">保存为新模板</SelectItem>
+                   {templates.length > 0 && (
+                     <>
+                       <SelectItem value="__sep__" disabled className="opacity-50">覆盖已有模板</SelectItem>
+                       {templates.map((t) => (
+                         <SelectItem key={t.id} value={t.id} className="focus:bg-white/10 focus:text-white">
+                           {t.name}
+                         </SelectItem>
+                       ))}
+                     </>
+                   )}
+                 </SelectContent>
+               </Select>
+             </div>
+             <div className="flex justify-end gap-2">
+               <Button variant="outline" onClick={() => setSaveTemplateOpen(false)} className="border-white/10 text-white/80 hover:text-white hover:bg-white/10">
+                 取消
+               </Button>
+               <Button onClick={handleSaveTemplate} className="bg-violet-600 hover:bg-violet-700 text-white">
+                 保存
+               </Button>
+             </div>
+           </div>
+         </DialogContent>
+       </Dialog>
+
+       <Dialog open={templatesOpen} onOpenChange={setTemplatesOpen}>
+         <DialogContent className="sm:max-w-[980px] bg-[#14141a] border-white/10 text-white">
+           <DialogHeader>
+             <DialogTitle>模板库</DialogTitle>
+           </DialogHeader>
+           <div className="flex items-center justify-between gap-2">
+             <div className="text-xs text-white/60">共 {templates.length} 个</div>
+             <div className="flex items-center gap-2">
+               <Button
+                 variant="outline"
+                 size="sm"
+                 onClick={handleOpenSaveTemplate}
+                 className="border-white/10 text-white/80 hover:text-white hover:bg-white/10"
+               >
+                 <Save className="mr-2 h-4 w-4" />
+                 保存当前为模板
+               </Button>
+               <Button
+                 variant="outline"
+                 size="sm"
+                 onClick={handleExportAllTemplates}
+                 className="border-white/10 text-white/80 hover:text-white hover:bg-white/10"
+               >
+                 <Download className="mr-2 h-4 w-4" />
+                 导出全部
+               </Button>
+               <Button
+                 variant="outline"
+                 size="sm"
+                 onClick={() => importInputRef.current?.click()}
+                 className="border-white/10 text-white/80 hover:text-white hover:bg-white/10"
+               >
+                 <Upload className="mr-2 h-4 w-4" />
+                 导入
+               </Button>
+             </div>
+           </div>
+           {templates.length === 0 ? (
+             <div className="text-sm text-white/60 py-10 text-center">暂无模板</div>
+           ) : (
+             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+               {templates.map((t) => (
+                 <div key={t.id} className="rounded-lg border border-white/10 bg-white/5 overflow-hidden">
+                   <div className="h-[140px] bg-black/20 flex items-center justify-center">
+                     {t.snapshotDataUrl ? (
+                       <img src={t.snapshotDataUrl} alt={t.name} className="h-full w-full object-contain" />
+                     ) : (
+                       <div className="text-xs text-white/40">无预览</div>
+                     )}
+                   </div>
+                   <div className="p-3">
+                     <div className="text-sm text-white/80 truncate">{t.name}</div>
+                     <div className="mt-1 text-[11px] text-white/50">
+                       更新于 {new Date(t.updatedAt || t.createdAt).toLocaleString()}
+                     </div>
+                     <div className="mt-3 flex items-center justify-between gap-2">
+                       <Button
+                         size="sm"
+                         onClick={() => applyTemplate(t)}
+                         className="bg-violet-600 hover:bg-violet-700 text-white"
+                       >
+                         应用
+                       </Button>
+                       <div className="flex items-center gap-2">
+                         <Button
+                           variant="outline"
+                           size="sm"
+                           onClick={() => {
+                             downloadJsonFile(`smart-layout-template-${t.id}.json`, t);
+                             toast.success('已导出模板');
+                           }}
+                           className="border-white/10 text-white/80 hover:text-white hover:bg-white/10"
+                         >
+                           导出
+                         </Button>
+                         <Button
+                           variant="outline"
+                           size="sm"
+                           onClick={() => {
+                             deleteSmartLayoutTemplate(t.id);
+                             refreshTemplates();
+                             toast.success('已删除模板');
+                           }}
+                           className="border-white/10 text-white/80 hover:text-white hover:bg-white/10"
+                         >
+                           <Trash2 className="h-4 w-4" />
+                         </Button>
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+               ))}
+             </div>
            )}
          </DialogContent>
        </Dialog>

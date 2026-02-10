@@ -93,6 +93,7 @@ export interface AppState {
   smartLayoutAssets: SmartLayoutAsset[];
   addSmartLayoutAsset: (asset: { name: string; dataUrl: string }) => string;
   removeSmartLayoutAsset: (id: string) => void;
+  clearSmartLayoutAssets: () => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -208,6 +209,7 @@ export const useAppStore = create<AppState>()(
       removeSmartLayoutAsset: (id) => set((state) => ({
         smartLayoutAssets: state.smartLayoutAssets.filter((a) => a.id !== id),
       })),
+      clearSmartLayoutAssets: () => set({ smartLayoutAssets: [] }),
     }),
     {
       name: 'app-storage',

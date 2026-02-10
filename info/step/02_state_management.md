@@ -3,6 +3,7 @@
 ## 1. 技术栈规范 (Tech Stack Specifications)
 *   **状态库**: Zustand (v5+)
 *   **持久化**: 使用 `persist` 中间件将部分状态（如用户偏好、最近的生成结果）保存到 localStorage。
+*   **容量风险（必须考虑）**：localStorage 容量有限（且按域名共享）。若在 Store 中持久化 Base64 图片（如素材库/上传图），很容易触发 QuotaExceeded 导致后续写入失败。\n    因此需要：上限裁剪、可一键清理入口、必要时将大对象从 Store 持久化中剥离或降级存储（后续可迁移 IndexedDB）。
 
 ## 2. 数据结构定义 (Data Structures)
 ```typescript
@@ -49,6 +50,12 @@ export interface AppState {
 **3.2 完善输入状态**
 *   将 `uploadedImages` 从简单的图片列表升级为支持“引用权重”或“用途标记”（可选，为未来扩展预留）。
 *   当前阶段确保 `uploadedImages` 能正确存储多张图片的 Base64 数据。
+
+**3.2.1 智能布局素材库（必须）**
+*   增加 `smartLayoutAssets`（素材库资源列表），用于在多个 Zone/多个风格变体之间复用同一张素材图，避免重复上传。\n    *   资源应可去重（同 dataUrl hash 为同一资源），并设置数量上限（例如最多 30 条）。\n    *   必须提供 `clearSmartLayoutAssets()` 或等价操作，并在 UI 里提供“一键清空素材库缓存”入口，用于释放本地存储空间。
+
+**3.2.2 智能布局模板/草稿（建议从 Store 中剥离）**
+*   智能布局“模板库/草稿”建议独立于 Zustand persist（单独 localStorage key 或 IndexedDB），原因：\n    *   模板可能携带 `snapshotDataUrl`（预览图），体积不可控；\n    *   与全局业务状态耦合度低。\n*   建议 key：\n    *   `smart_layout_templates_v1`\n    *   `smart_layout_draft_v1`\n*   需要处理写入失败：导入/保存时应检测写入是否成功；若失败需提示用户，并支持降级（例如移除预览图再保存）。
 
 **3.3 算力逻辑解耦**
 *   实现 `deductCredits(amount)`：

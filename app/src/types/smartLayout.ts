@@ -49,6 +49,38 @@ export interface SmartLayoutSettings {
   enableDepthTree: boolean; // 输出 DEPTH_TREE 段落（默认开启）
 }
 
+export interface SmartLayoutDraftV1 {
+  schemaVersion: 1;
+  updatedAt: number;
+  canvasSize: { width: number; height: number };
+  zones: LayoutZone[];
+  settings: SmartLayoutSettings;
+  generationContextSnapshot?: {
+    platformId?: string;
+    language?: 'zh' | 'en';
+    model?: string;
+    imageCount?: number;
+    ratioMode?: string;
+    stylePreset?: string;
+    scene?: string;
+  };
+}
+
+export interface SmartLayoutTemplateV1 {
+  schemaVersion: 1;
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  snapshotDataUrl?: string;
+  payload: {
+    canvasSize: { width: number; height: number };
+    zones: LayoutZone[];
+    settings: SmartLayoutSettings;
+    generationContextSnapshot?: SmartLayoutDraftV1['generationContextSnapshot'];
+  };
+}
+
 export interface SmartCanvasProps {
   zones: LayoutZone[];
   onChange: (newZones: LayoutZone[]) => void;
