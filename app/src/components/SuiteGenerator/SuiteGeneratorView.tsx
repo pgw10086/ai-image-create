@@ -76,7 +76,16 @@ export function SuiteGeneratorView() {
   const isGenerating = tasks.some((t) => t.status === 'processing');
   const abortRef = useRef<AbortController | null>(null);
   const lastPresetAtRef = useRef<number>(0);
-  const { fileInputRef, handleFileUpload, openPicker } = useImageUploadPicker();
+  const {
+    fileInputRef,
+    handleFileUpload,
+    openPicker,
+    isDragActive,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    handlePaste,
+  } = useImageUploadPicker();
 
   const templateAvailableShotIds = useMemo(() => {
     if (!selectedTemplate) return [];
@@ -619,7 +628,13 @@ export function SuiteGeneratorView() {
             className="hidden"
           />
 
-          <Card className="border-white/10 bg-card/60">
+          <Card
+            className={`border-white/10 bg-card/60 transition-colors ${isDragActive ? 'border-violet-400/70 bg-violet-500/10' : ''}`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onPaste={handlePaste}
+          >
             <CardHeader className="pb-2">
               <CardTitle className="text-base">全局商品描述</CardTitle>
             </CardHeader>

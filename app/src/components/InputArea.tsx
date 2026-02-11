@@ -14,6 +14,7 @@ import {
 } from '@/lib/generationContext';
 import { useImageUploadPicker } from '@/hooks/useImageUploadPicker';
 import { toast } from 'sonner';
+import { Textarea } from '@/components/ui/textarea';
 
 const examplePrompts = [
   '无线耳机，主动降噪，地铁上使用',
@@ -38,7 +39,16 @@ export function InputArea() {
   } = useAppStore();
   
   const [isFocused, setIsFocused] = useState(false);
-  const { fileInputRef, handleFileUpload, openPicker } = useImageUploadPicker();
+  const {
+    fileInputRef,
+    handleFileUpload,
+    openPicker,
+    isDragActive,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    handlePaste,
+  } = useImageUploadPicker();
 
   const isGenerating = tasks.some(t => t.status === 'processing');
 
@@ -170,11 +180,15 @@ export function InputArea() {
       )}
 
       <div
-        className={`relative flex items-center gap-3 p-3 rounded-2xl bg-card/80 border transition-all duration-300 ${
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onPaste={handlePaste}
+        className={`relative flex items-end gap-3 p-3 rounded-2xl bg-card/80 border transition-all duration-300 ${
           isFocused
             ? 'border-violet-500/50 shadow-[0_0_30px_rgba(139,92,246,0.15)]'
             : 'border-white/10'
-        }`}
+        } ${isDragActive ? 'border-violet-400/70 bg-violet-500/10' : ''}`}
       >
         {/* Hidden File Input */}
         <input
@@ -198,21 +212,22 @@ export function InputArea() {
         </motion.button>
 
         {/* Input Field */}
-        <input
-          type="text"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          placeholder="请输入产品名、卖点和场景；如：无线耳机，主动降噪，地铁上使用"
-          className="flex-1 bg-transparent text-white placeholder:text-white/40 text-base outline-none min-w-0"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              handleGenerate();
-            }
-          }}
-        />
+        <div className="flex-1 min-w-0">
+          <Textarea
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            placeholder="请输入产品名、卖点和场景；如：无线耳机，主动降噪，地铁上使用\n支持多行描述，按 Ctrl/Cmd + Enter 发送"
+            className="min-h-14 max-h-40 bg-transparent border-0 shadow-none px-0 py-2 text-white placeholder:text-white/40 text-base leading-6 resize-none focus-visible:ring-0"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                handleGenerate();
+              }
+            }}
+          />
+        </div>
 
         {/* View Example Button */}
         <motion.button

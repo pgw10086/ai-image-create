@@ -153,6 +153,112 @@ function getRequestedImageCount(params: GenerateImageParams) {
   return 1;
 }
 
+function toDataUri(imageData: string, mimeType = 'image/png') {
+  const value = (imageData ?? '').trim();
+  if (!value) return '';
+  if (value.startsWith('data:')) return value;
+  return `data:${mimeType};base64,${value}`;
+}
+
+function normalizeSeedreamResponse(payload: any, fallbackSize?: string): GenerateImageResponse {
+  const rawData = Array.isArray(payload?.data) ? payload.data : [];
+  const data = rawData
+    .map((item: any) => {
+      if (typeof item?.url === 'string' && item.url.trim()) {
+        return {
+          url: item.url,
+          size: item.size || fallbackSize,
+        };
+      }
+
+      if (typeof item?.b64_json === 'string' && item.b64_json.trim()) {
+        return {
+          url: toDataUri(item.b64_json),
+          size: item.size || fallbackSize,
+        };
+      }
+
+      return null;
+    })
+    .filter(Boolean) as Array<{ url?: string; size?: string }>;
+
+  if (data.length > 0) {
+    return {
+      ...payload,
+      data,
+    };
+  }
+
+  const embeddedError = rawData.find((item: any) => item?.error?.message)?.error;
+  if (payload?.error || embeddedError) {
+    const normalizedError = payload.error || embeddedError;
+    return {
+      ...payload,
+      code: payload?.code || normalizedError?.code || APIErrorCodes.UNKNOWN,
+      message: payload?.message || normalizedError?.message || '生成失败，请重试',
+      error: {
+        code: normalizedError?.code || APIErrorCodes.UNKNOWN,
+        message: normalizedError?.message || payload?.message || '生成失败，请重试',
+      },
+      data: [],
+    };
+  }
+
+  return {
+    ...payload,
+    data,
+  };
+}
+
+function extractGeminiImages(payload: any, fallbackSize?: string) {
+  const images: Array<{ url: string; size?: string }> = [];
+  const seen = new Set<string>();
+
+  const pushUrl = (url?: string, size?: string) => {
+    const value = (url ?? '').trim();
+    if (!value || seen.has(value)) return;
+    seen.add(value);
+    images.push({ url: value, size: size || fallbackSize });
+  };
+
+  const generatedImages = Array.isArray(payload?.generatedImages) ? payload.generatedImages : [];
+  for (const item of generatedImages) {
+    const image = item?.image;
+    if (!image) continue;
+
+    if (typeof image?.gcsUri === 'string' && image.gcsUri.trim()) {
+      pushUrl(image.gcsUri, fallbackSize);
+    }
+
+    if (typeof image?.imageBytes === 'string' && image.imageBytes.trim()) {
+      pushUrl(toDataUri(image.imageBytes, image.mimeType || 'image/png'), fallbackSize);
+    }
+  }
+
+  const candidates = Array.isArray(payload?.candidates) ? payload.candidates : [];
+  for (const candidate of candidates) {
+    const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [];
+    for (const part of parts) {
+      const inlineData = part?.inlineData || part?.inline_data;
+      if (inlineData?.data) {
+        pushUrl(toDataUri(inlineData.data, inlineData.mimeType || inlineData.mime_type || 'image/png'), fallbackSize);
+      }
+
+      const fileData = part?.fileData || part?.file_data;
+      const fileUri = fileData?.fileUri || fileData?.file_uri;
+      if (typeof fileUri === 'string' && fileUri.trim()) {
+        pushUrl(fileUri, fallbackSize);
+      }
+    }
+  }
+
+  if (images.length === 0 && typeof payload?.data === 'string' && payload.data.trim()) {
+    pushUrl(toDataUri(payload.data, 'image/png'), fallbackSize);
+  }
+
+  return images;
+}
+
 function waitForAbort(signal?: AbortSignal) {
   if (!signal) return null;
   return new Promise<never>((_, reject) => {
@@ -201,48 +307,28 @@ async function generateByGemini(params: GenerateImageParams): Promise<GenerateIm
       })
     );
 
-    const allImages: Array<{ url?: string; size?: string }> = [];
-    let lastResponse: any = null;
+    const baseConfig: Record<string, any> = {
+      imageConfig: {
+        ...(aspectRatio ? { aspectRatio } : {}),
+        imageSize,
+      },
+      responseModalities: ['IMAGE'],
+    };
+    const requestPayload = {
+      model: TAIHAO_PRO_MODEL_ID,
+      contents: [{ role: 'user', parts: [...imageParts, { text: params.prompt }] }] as any,
+      config: baseConfig,
+    } as any;
 
-    for (let i = 0; i < requestedCount; i++) {
-      if (params.signal?.aborted) {
-        throw { code: 'abort', message: 'Request aborted' };
-      }
+    const response: any = await withTimeoutAndAbort(ai.models.generateContent(requestPayload), params.signal);
 
-      const response = await withTimeoutAndAbort(
-        ai.models.generateContent({
-          model: TAIHAO_PRO_MODEL_ID,
-          contents: [{ role: 'user', parts: [...imageParts, { text: params.prompt }] }] as any,
-          config: {
-            imageConfig: {
-              ...(aspectRatio ? { aspectRatio } : {}),
-              imageSize,
-            },
-          },
-        } as any),
-        params.signal
-      );
-      lastResponse = response;
+    const allImages = extractGeminiImages(response, normalizedSize);
+    const finalImages = allImages.slice(0, requestedCount);
 
-      const candidates = (response as any)?.candidates || [];
-      for (const candidate of candidates) {
-        const parts = candidate?.content?.parts || [];
-        for (const part of parts) {
-          const base64 = part?.inlineData?.data;
-          if (!base64) continue;
-          const mimeType = part?.inlineData?.mimeType || 'image/png';
-          allImages.push({
-            url: `data:${mimeType};base64,${base64}`,
-            size: normalizedSize,
-          });
-        }
-      }
-
-      if (allImages.length >= requestedCount) break;
-    }
-
-    if (allImages.length === 0) {
-      const textFallback = lastResponse?.candidates?.[0]?.content?.parts?.find?.((part: any) => part?.text)?.text;
+    if (finalImages.length === 0) {
+      const textFallback =
+        (typeof response?.text === 'string' ? response.text : '') ||
+        response?.candidates?.[0]?.content?.parts?.find?.((part: any) => part?.text)?.text;
       const message = textFallback || 'Gemini 未返回图像数据';
       return {
         code: APIErrorCodes.UNKNOWN,
@@ -251,10 +337,10 @@ async function generateByGemini(params: GenerateImageParams): Promise<GenerateIm
     }
 
     return {
-      data: allImages.slice(0, requestedCount),
+      data: finalImages,
       usage: {
-        generated_images: Math.min(allImages.length, requestedCount),
-        total_tokens: 0,
+        generated_images: finalImages.length,
+        total_tokens: Number(response?.usageMetadata?.totalTokenCount) || 0,
       },
     };
   } catch (error: any) {
@@ -333,7 +419,7 @@ async function generateBySeedream(params: GenerateImageParams): Promise<Generate
       signal,
     });
 
-    return data;
+    return normalizeSeedreamResponse(data, normalizedSize);
   } catch (error: any) {
     console.error('Generation failed:', error);
     return {

@@ -12,6 +12,7 @@ interface CaseItem {
   image: string;
   title: string;
   description: string;
+  promptTemplate?: string;
   tags: string[];
 }
 
@@ -51,6 +52,26 @@ const cases: CaseItem[] = [
     description: '科技产品展示，炫酷灯光效果，适合数码产品推广',
     tags: ['数码', '耳机', '科技']
   },
+  {
+    id: '6',
+    image: '/images/case-bag.jpg',
+    title: '蝴蝶结',
+    description: '母婴派对细节展示风格，马卡龙配色与柔和布光，突出丝带质感与工艺卖点',
+    promptTemplate:
+      `
+设计一张电商详情页海报。 视觉风格： 清新、梦幻、母婴风、高调照明（High-key lighting）。 色彩方案： 婴儿蓝（Baby Blue）、樱花粉（Cherry Blossom Pink）、纯白。 版式布局：
+	•	Top Header: 浅蓝色不规则波浪背景，中间放置大写字体“PRODUCT DETAILS”。
+	•	Main Scene: 画面中心是一个白色壁炉场景，展示产品（粉蓝蝴蝶结挂旗）的实际挂放效果。环境整洁，光影自然。
+	•	Bottom Insets: 在海报最下方，设计三个等大的圆形蒙版切片。
+	•	左圆：标注“Back view”，展示背面做工。
+	•	中圆：标注“Swallowtail Design”，展示丝带末端的V型剪裁。
+	•	右圆：标注“Silky Luster”，展示手部与蝴蝶结的比例及材质反光。 细节要求： 缎面材质要有真实的丝滑反光感，气球要有通透感，整体画质达到 8k 商业摄影级别。
+
+艺术化字体要求： > * 文案： "Back view", "Swallowtail Design", "Soft Silky Luster"。
+	•	字体风格： 采用优雅的手写花体（Chic Calligraphy Script）或意式现代衬线斜体（Modern Italic Serif）。
+	•	视觉处理： 字体颜色采用深灰蓝（Navy Gray），避免纯黑的生硬感。文字排版要富有节奏感，下方可点缀一条极细的装饰线，增强“电商画报”的精致氛围。`,
+    tags: ['母婴', '派对', '亚马逊'],
+  },
 ];
 
 export function CaseGallery() {
@@ -70,7 +91,7 @@ export function CaseGallery() {
 
   const handleUseCase = async (caseItem: CaseItem) => {
     setSelectedCase(null);
-    setInputValue(`生成类似「${caseItem.title}」风格的产品图：${caseItem.description}`);
+    setInputValue(caseItem.promptTemplate ?? `生成类似「${caseItem.title}」风格的产品图：${caseItem.description}`);
     toast.success('已加载案例模板');
   };
 

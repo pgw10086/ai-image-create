@@ -1,8 +1,113 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware';
 import type { SuiteGenerationResult } from '../types/suite';
 import type { SmartLayoutAsset } from '@/types/smartLayout';
 import { ensureAvailableModelLabel, getDefaultModelLabel } from '@/lib/generationContext';
+
+const INTERRUPTED_TASK_ERROR = '页面刷新或关闭导致任务中断，请重新生成';
+
+const IDB_DATABASE_NAME = 'ai-product-gen';
+const IDB_STORE_NAME = 'zustand-persist';
+const IDB_VERSION = 1;
+
+type PersistRecord = {
+  key: string;
+  value: string;
+  updatedAt: number;
+};
+
+let persistDbPromise: Promise<IDBDatabase> | null = null;
+
+function requestToPromise<T>(request: IDBRequest<T>) {
+  return new Promise<T>((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed'));
+  });
+}
+
+function transactionDone(transaction: IDBTransaction) {
+  return new Promise<void>((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB transaction aborted'));
+    transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB transaction failed'));
+  });
+}
+
+function openPersistDb() {
+  if (persistDbPromise) return persistDbPromise;
+
+  persistDbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+    if (typeof window === 'undefined' || typeof window.indexedDB === 'undefined') {
+      reject(new Error('IndexedDB unavailable'));
+      return;
+    }
+
+    const request = window.indexedDB.open(IDB_DATABASE_NAME, IDB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(IDB_STORE_NAME)) {
+        db.createObjectStore(IDB_STORE_NAME, { keyPath: 'key' });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error('Failed to open IndexedDB'));
+  });
+
+  return persistDbPromise;
+}
+
+async function readIndexedDbValue(name: string) {
+  const db = await openPersistDb();
+  const transaction = db.transaction(IDB_STORE_NAME, 'readonly');
+  const store = transaction.objectStore(IDB_STORE_NAME);
+  const record = await requestToPromise(store.get(name) as IDBRequest<PersistRecord | undefined>);
+  await transactionDone(transaction);
+  return record?.value ?? null;
+}
+
+async function writeIndexedDbValue(name: string, value: string) {
+  const db = await openPersistDb();
+  const transaction = db.transaction(IDB_STORE_NAME, 'readwrite');
+  const store = transaction.objectStore(IDB_STORE_NAME);
+  store.put({ key: name, value, updatedAt: Date.now() } as PersistRecord);
+  await transactionDone(transaction);
+}
+
+async function removeIndexedDbValue(name: string) {
+  const db = await openPersistDb();
+  const transaction = db.transaction(IDB_STORE_NAME, 'readwrite');
+  const store = transaction.objectStore(IDB_STORE_NAME);
+  store.delete(name);
+  await transactionDone(transaction);
+}
+
+const indexedDbStorage: StateStorage = {
+  getItem: async (name) => {
+    if (typeof window === 'undefined') return null;
+    try {
+      return await readIndexedDbValue(name);
+    } catch (error) {
+      console.warn('[store] 从 IndexedDB 读取缓存失败', error);
+      return null;
+    }
+  },
+  setItem: async (name, value) => {
+    if (typeof window === 'undefined') return;
+    try {
+      await writeIndexedDbValue(name, value);
+    } catch (error) {
+      console.warn('[store] 写入 IndexedDB 失败，状态仅保留在当前会话', error);
+    }
+  },
+  removeItem: async (name) => {
+    if (typeof window === 'undefined') return;
+    try {
+      await removeIndexedDbValue(name);
+    } catch (error) {
+      console.warn('[store] 删除 IndexedDB 缓存失败', error);
+    }
+  },
+};
 
 function hashStringFNV1a(input: string) {
   let hash = 2166136261;
@@ -11,6 +116,50 @@ function hashStringFNV1a(input: string) {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function normalizeInterruptedSuiteResult(result?: SuiteGenerationResult) {
+  if (!result?.items?.length) return result;
+
+  let changed = false;
+  const normalizedItems = result.items.map((item) => {
+    if (item.status !== 'pending' && item.status !== 'processing') return item;
+    changed = true;
+    return {
+      ...item,
+      status: 'failed' as const,
+      error: item.error || INTERRUPTED_TASK_ERROR,
+    };
+  });
+
+  if (!changed) return result;
+  return {
+    ...result,
+    items: normalizedItems,
+  };
+}
+
+function normalizeInterruptedTask(task: GenerationTask): GenerationTask {
+  const normalizedSuite = normalizeInterruptedSuiteResult(task.result?.suite);
+  const hasSuiteChanged = normalizedSuite !== task.result?.suite;
+  const isInterrupted = task.status === 'pending' || task.status === 'processing';
+
+  if (!isInterrupted && !hasSuiteChanged) return task;
+
+  const nextResult = hasSuiteChanged ? { ...(task.result ?? {}), suite: normalizedSuite } : task.result;
+  if (isInterrupted) {
+    return {
+      ...task,
+      status: 'failed',
+      error: task.error || INTERRUPTED_TASK_ERROR,
+      result: nextResult,
+    };
+  }
+
+  return {
+    ...task,
+    result: nextResult,
+  };
 }
 
 export interface GenerationTask {
@@ -214,12 +363,31 @@ export const useAppStore = create<AppState>()(
     {
       name: 'app-storage',
       version: 4,
+      storage: createJSONStorage(() => indexedDbStorage),
       migrate: (persistedState: any) => {
         const state = persistedState ?? {};
         const current = state?.generationContext?.model;
         const safeModel = !current ? getDefaultModelLabel() : ensureAvailableModelLabel(current);
         state.generationContext = { ...(state.generationContext ?? {}), model: safeModel };
         return state;
+      },
+      merge: (persistedState, currentState) => {
+        const persisted = (persistedState ?? {}) as Partial<AppState>;
+        const persistedTasks = Array.isArray(persisted.tasks) ? persisted.tasks : [];
+        const mergedGenerationContext = {
+          ...currentState.generationContext,
+          ...(persisted.generationContext ?? {}),
+        };
+
+        return {
+          ...currentState,
+          ...persisted,
+          generationContext: {
+            ...mergedGenerationContext,
+            model: ensureAvailableModelLabel(mergedGenerationContext.model),
+          },
+          tasks: persistedTasks.map(normalizeInterruptedTask),
+        };
       },
       partialize: (state) => ({
         credits: state.credits,
