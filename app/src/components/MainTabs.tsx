@@ -3,7 +3,7 @@ import { Info } from 'lucide-react';
 import { useAppStore } from '@/store/appStore';
 
 interface Tab {
-  id: 'crossborder' | 'domestic' | 'smart_layout';
+  id: 'crossborder' | 'smart_layout';
   title: string;
   subtitle: string;
   description: string;
@@ -18,13 +18,6 @@ const tabs: Tab[] = [
     description: '',
   },
   {
-    id: 'domestic',
-    title: '中文电商（开发中）',
-    subtitle: '正在开发中，敬请期待',
-    description: '',
-    badge: '敬请期待',
-  },
-  {
     id: 'smart_layout',
     title: '智能布局',
     subtitle: '自由绘制区域，精准控制构图',
@@ -35,17 +28,13 @@ const tabs: Tab[] = [
 
 export function MainTabs() {
   const { activeTab, setActiveTab } = useAppStore();
-  // Map store tab to UI tab
-  const uiActiveTab = activeTab === 'detail' ? 'crossborder' : (activeTab === 'smart_layout' ? 'smart_layout' : 'domestic');
-  const isTabDisabled = (tabId: 'crossborder' | 'domestic' | 'smart_layout') => tabId === 'domestic';
+  const uiActiveTab = activeTab === 'smart_layout' ? 'smart_layout' : 'crossborder';
 
-  const handleTabChange = (tabId: 'crossborder' | 'domestic' | 'smart_layout') => {
+  const handleTabChange = (tabId: 'crossborder' | 'smart_layout') => {
     if (tabId === 'crossborder') {
       setActiveTab('detail');
-    } else if (tabId === 'smart_layout') {
-      setActiveTab('smart_layout');
     } else {
-      setActiveTab('single');
+      setActiveTab('smart_layout');
     }
   };
 
@@ -64,22 +53,19 @@ export function MainTabs() {
       <div className="relative p-6">
         <div className="flex gap-8">
           {tabs.map((tab) => {
-            const disabled = isTabDisabled(tab.id);
             const isActive = uiActiveTab === tab.id;
 
             return (
               <motion.button
                 key={tab.id}
-                disabled={disabled}
-                aria-disabled={disabled}
-                onClick={disabled ? undefined : () => handleTabChange(tab.id)}
+                onClick={() => handleTabChange(tab.id)}
                 className={`flex-1 text-left p-4 rounded-xl transition-all duration-300 relative ${
-                  isActive ? 'bg-white/10' : (disabled ? 'bg-white/0' : 'hover:bg-white/5')
-                } ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
-                whileHover={disabled ? undefined : { scale: 1.01 }}
-                whileTap={disabled ? undefined : { scale: 0.99 }}
+                  isActive ? 'bg-white/10' : 'hover:bg-white/5'
+                }`}
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
               >
-                {isActive && !disabled && (
+                {isActive && (
                   <motion.div
                     layoutId="activeTab"
                     className="absolute inset-0 rounded-xl border border-violet-500/50 bg-gradient-to-r from-violet-600/20 to-purple-600/10"
@@ -89,7 +75,7 @@ export function MainTabs() {
 
                 <div className="relative z-10">
                   <div className="flex items-center gap-2 mb-2">
-                    <h3 className={`text-lg font-semibold ${isActive && !disabled ? 'text-white' : 'text-white/70'}`}>
+                    <h3 className={`text-lg font-semibold ${isActive ? 'text-white' : 'text-white/70'}`}>
                       {tab.title}
                     </h3>
                     {tab.badge && (
@@ -97,9 +83,9 @@ export function MainTabs() {
                         {tab.badge}
                       </span>
                     )}
-                    <Info className={`w-4 h-4 ${isActive && !disabled ? 'text-violet-400' : 'text-white/40'}`} />
+                    <Info className={`w-4 h-4 ${isActive ? 'text-violet-400' : 'text-white/40'}`} />
                   </div>
-                  <p className={`text-sm ${isActive && !disabled ? 'text-white/80' : 'text-white/50'}`}>
+                  <p className={`text-sm ${isActive ? 'text-white/80' : 'text-white/50'}`}>
                     {tab.subtitle}
                   </p>
                 </div>

@@ -80,7 +80,7 @@ const bottomTags: Tag[] = [
   { id: 'text', label: '有文本', icon: Type },
 ];
 
-export function FeatureTags({ variant = 'default' }: { variant?: 'default' | 'suite' }) {
+export function FeatureTags({ variant: _variant = 'default' }: { variant?: 'default' | 'suite' }) {
   const { activeTags, toggleTag, activeTab, generationContext, updateGenerationContext, uploadedImages } = useAppStore();
   const { fileInputRef, handleFileUpload, openPicker } = useImageUploadPicker();
   const modelId = resolveModelId(generationContext.model);
@@ -90,12 +90,9 @@ export function FeatureTags({ variant = 'default' }: { variant?: 'default' | 'su
 
   const isTagActive = (tagId: string) => activeTags.includes(tagId);
 
-  const visibleTags =
-    variant === 'suite'
-      ? tags.filter((t) => ['model', 'style', 'more'].includes(t.id))
-      : tags;
+  const visibleTags = tags.filter((t) => ['model', 'count', 'platform', 'ratio'].includes(t.id));
 
-  const visibleBottomTags = variant === 'suite' ? bottomTags.filter((t) => t.id === 'text') : bottomTags;
+  const visibleBottomTags = bottomTags.filter(() => false);
 
   return (
     <motion.div

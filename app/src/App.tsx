@@ -6,11 +6,9 @@ import { MainTabs } from './components/MainTabs';
 import { InputArea } from './components/InputArea';
 import { DomesticModeSwitch } from './components/DomesticModeSwitch';
 import { FeatureTags } from './components/FeatureTags';
-import { CapabilityCards } from './components/CapabilityCards';
 import { CaseGallery } from './components/CaseGallery';
 import { GeneratedGallery } from './components/GeneratedGallery';
 import { SmartLayoutView } from './components/SmartLayoutView';
-import { SmartLayoutPresets } from './components/smart-layout/SmartLayoutPresets';
 import { SuiteGeneratorView } from './components/SuiteGenerator/SuiteGeneratorView';
 import { SuiteResultView } from './components/SuiteGenerator/SuiteResultView';
 import { useAppStore } from './store/appStore';
@@ -68,7 +66,6 @@ function App() {
                   <div className="mt-6">
                     <SmartLayoutView />
                   </div>
-                  <SmartLayoutPresets />
                 </>
               )}
             </>
@@ -84,9 +81,6 @@ function App() {
 
               {/* Generated Gallery */}
               {domesticMode === 'single' ? <GeneratedGallery /> : <SuiteResultView />}
-
-              {/* Capability Cards */}
-              <CapabilityCards />
 
               {/* Case Gallery */}
               <CaseGallery />
