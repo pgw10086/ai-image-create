@@ -31,20 +31,29 @@ export function GeneratedGallery() {
   const [showHistory, setShowHistory] = useState(false);
 
   const singleTasks = useMemo(
-    () => tasks.filter((task) => task.type === 'single'),
+    () => tasks
+      .filter((task) => task.type === 'single')
+      .slice()
+      .sort((a, b) => b.createdAt - a.createdAt),
     [tasks]
   );
 
+  const latestSuccessTask = useMemo(
+    () => singleTasks.find(hasImages),
+    [singleTasks]
+  );
+
   const generatedImages = useMemo(
-    () => singleTasks
-      .filter(hasImages)
-      .flatMap((task) => task.result.images.map((image, index) => ({
-        id: `${task.id}-${index}-${image.url}`,
+    () => {
+      if (!latestSuccessTask) return [];
+      return latestSuccessTask.result.images.map((image, index) => ({
+        id: `${latestSuccessTask.id}-${index}-${image.url}`,
         url: image.url,
         prompt: image.prompt,
-        createdAt: task.createdAt,
-      }))),
-    [singleTasks]
+        createdAt: latestSuccessTask.createdAt,
+      }));
+    },
+    [latestSuccessTask]
   );
 
   const handleDownload = (url: string, fileId: string) => {
@@ -74,7 +83,7 @@ export function GeneratedGallery() {
             生成结果
           </span>
           <span className="text-white/50 text-sm">
-            共 {generatedImages.length} 张
+            最近一次 {generatedImages.length} 张
           </span>
         </div>
         <div className="flex items-center gap-2">
