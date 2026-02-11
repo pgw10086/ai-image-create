@@ -77,7 +77,9 @@ export const RATIO_OPTIONS: Array<{ id: string; label: string }> = [
   { id: '3:2', label: '3:2' },
   { id: '2:3', label: '2:3' },
   { id: '21:9', label: '21:9' },
-  { id: '1K', label: '1K' },
+];
+
+export const QUALITY_OPTIONS: Array<{ id: '2K' | '4K'; label: string }> = [
   { id: '2K', label: '2K' },
   { id: '4K', label: '4K' },
 ];
@@ -352,8 +354,11 @@ export function resolveSizeFromCanvasForModel(params: { canvasWidth: number; can
   return { size, hint: `Output size: ${size}. Aspect ratio based on canvas.` };
 }
 
-export function resolveSizeFromRatioMode(params: { ratioMode?: string; modelId?: string }) {
-  const ratioMode = (params.ratioMode ?? '智能比例').trim();
+export function resolveSizeFromRatioMode(params: { ratioMode?: string; qualityMode?: '2K' | '4K'; modelId?: string }) {
+  const rawRatioMode = (params.ratioMode ?? '智能比例').trim();
+  const ratioMode = rawRatioMode === '智能比例' || rawRatioMode.includes(':') ? rawRatioMode : '智能比例';
+  const qualityMode: '2K' | '4K' = params.qualityMode === '4K' ? '4K' : '2K';
+
   const modelId = (params.modelId ?? '').trim();
   const isGemini = modelId.includes('gemini-3-pro-image-preview');
   const is45 = modelId.includes('4.5') || modelId.includes('4-5');
@@ -361,7 +366,7 @@ export function resolveSizeFromRatioMode(params: { ratioMode?: string; modelId?:
   const is30 = modelId.includes('3.0-t2i');
   const isEdit30 = modelId.includes('seededit-3.0-i2i');
 
-  const map: Record<string, string> = {
+  const map2k: Record<string, string> = {
     '1:1': '2048x2048',
     '4:3': '2304x1728',
     '3:4': '1728x2304',
@@ -370,6 +375,17 @@ export function resolveSizeFromRatioMode(params: { ratioMode?: string; modelId?:
     '3:2': '2496x1664',
     '2:3': '1664x2496',
     '21:9': '3024x1296',
+  };
+
+  const map4k: Record<string, string> = {
+    '1:1': '3072x3072',
+    '4:3': '3264x2448',
+    '3:4': '2448x3264',
+    '16:9': '3840x2160',
+    '9:16': '2160x3840',
+    '3:2': '3456x2304',
+    '2:3': '2304x3456',
+    '21:9': '4032x1728',
   };
 
   const map30: Record<string, string> = {
@@ -383,27 +399,9 @@ export function resolveSizeFromRatioMode(params: { ratioMode?: string; modelId?:
     '21:9': '1512x648',
   };
 
-  if (ratioMode === '1K' || ratioMode === '2K' || ratioMode === '4K') {
-    if (isEdit30) return { size: undefined, hint: 'Use adaptive output size (image-to-image).' };
-    if (isGemini) return { size: ratioMode, hint: `Resolution: ${ratioMode}.` };
-    if (is30) {
-      const size = ratioMode === '4K' ? '2048x2048' : ratioMode === '2K' ? '2048x2048' : '1024x1024';
-      return { size, hint: `Output size: ${size}.` };
-    }
-    if (ratioMode === '1K') {
-      if (is40) return { size: '1K', hint: 'Resolution: 1K.' };
-      return { size: '2K', hint: 'Resolution: 2K.' };
-    }
-    if (ratioMode === '4K') {
-      if (is45 || is40) return { size: '4K', hint: 'Resolution: 4K.' };
-      return { size: '2048x2048', hint: 'Output size: 2048x2048.' };
-    }
-    if (is45 || is40) return { size: '2K', hint: 'Resolution: 2K.' };
-    return { size: '2048x2048', hint: 'Output size: 2048x2048.' };
-  }
-
   if (ratioMode === '智能比例') {
-    const size = isEdit30 ? undefined : is30 ? '1024x1024' : isGemini || is40 || is45 ? '2K' : undefined;
+    const preferredQuality = qualityMode === '4K' && (isGemini || is45 || is40) ? '4K' : '2K';
+    const size = isEdit30 ? undefined : is30 ? '2048x2048' : isGemini || is40 || is45 ? preferredQuality : undefined;
     return { size, hint: 'Choose the best aspect ratio automatically for e-commerce.' };
   }
 
@@ -414,11 +412,14 @@ export function resolveSizeFromRatioMode(params: { ratioMode?: string; modelId?:
     if (size) return { size, hint: `Output size: ${size}. Aspect ratio ${ratioMode}.` };
   }
 
-  const size = map[ratioMode];
+  const size = (qualityMode === '4K' ? map4k : map2k)[ratioMode];
   if (size) return { size, hint: `Output size: ${size}. Aspect ratio ${ratioMode}.` };
 
-  if (isGemini) return { size: '2K', hint: 'Resolution: 2K.' };
-  if (is45 || is40) return { size: '2048x2048', hint: 'Output size: 2048x2048. Aspect ratio 1:1.' };
+  if (isGemini) return { size: qualityMode, hint: `Resolution: ${qualityMode}.` };
+  if (is45 || is40) {
+    const fallback = qualityMode === '4K' ? '3072x3072' : '2048x2048';
+    return { size: fallback, hint: `Output size: ${fallback}. Aspect ratio 1:1.` };
+  }
   return { size: undefined, hint: '' };
 }
 

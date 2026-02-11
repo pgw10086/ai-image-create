@@ -62,7 +62,10 @@ export function InputArea() {
       toast.error('未配置 VITE_GOOGLE_API_KEY，无法使用泰豪生图1.0-pro');
       return;
     }
-    const { size, hint: sizeHint } = resolveSizeFromRatioMode({ ratioMode: generationContext.ratioMode, modelId });
+    const ratioModeRaw = (generationContext.ratioMode ?? '').trim();
+    const ratioMode = ratioModeRaw === '智能比例' || ratioModeRaw.includes(':') ? ratioModeRaw : '智能比例';
+    const qualityMode = generationContext.qualityMode === '4K' ? '4K' : '2K';
+    const { size, hint: sizeHint } = resolveSizeFromRatioMode({ ratioMode, qualityMode, modelId });
     const allowText = activeTags.includes('text');
     const basePrompt = (inputValue.trim() || 'product photography, professional e-commerce style').trim();
     const prompt = buildPromptWithContext({

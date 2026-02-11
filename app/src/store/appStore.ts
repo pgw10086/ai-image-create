@@ -191,6 +191,7 @@ export interface GenerationContext {
   model: string;
   imageCount: number;
   ratioMode: string; // e.g. 智能比例 / 1:1 / 3:4 ...
+  qualityMode: '2K' | '4K';
   stylePreset?: string;
   scene?: string;
 }
@@ -271,15 +272,29 @@ export const useAppStore = create<AppState>()(
         model: getDefaultModelLabel(),
         imageCount: 6,
         ratioMode: '智能比例',
+        qualityMode: '2K',
         stylePreset: undefined,
         scene: 'detail',
       },
       updateGenerationContext: (partial) => set((state) => ({
-        generationContext: {
-          ...state.generationContext,
-          ...partial,
-          model: ensureAvailableModelLabel(partial.model ?? state.generationContext.model),
-        },
+        generationContext: (() => {
+          const prev = state.generationContext;
+          const nextModel = ensureAvailableModelLabel(partial.model ?? prev.model);
+          const rawRatioMode = (partial.ratioMode ?? prev.ratioMode ?? '').trim();
+          const legacyQualityByRatio: '2K' | '4K' | null =
+            rawRatioMode === '4K' ? '4K' : rawRatioMode === '1K' || rawRatioMode === '2K' ? '2K' : null;
+          const normalizedRatioMode = rawRatioMode === '智能比例' || rawRatioMode.includes(':') ? rawRatioMode : '智能比例';
+          const normalizedQualityMode =
+            (partial.qualityMode ?? legacyQualityByRatio ?? prev.qualityMode) === '4K' ? '4K' : '2K';
+
+          return {
+            ...prev,
+            ...partial,
+            model: nextModel,
+            ratioMode: normalizedRatioMode,
+            qualityMode: normalizedQualityMode,
+          };
+        })(),
       })),
       
       // Uploaded images

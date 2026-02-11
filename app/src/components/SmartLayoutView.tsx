@@ -278,16 +278,24 @@ export function SmartLayoutView({ className }: { className?: string }) {
       };
       const platformIdNormalized = normalizePlatformId(generationContext.platformId);
       const sceneNormalized = normalizeScene(generationContext.scene);
-      const ratioMode = (generationContext.ratioMode ?? '智能比例').trim();
+      const ratioModeRaw = (generationContext.ratioMode ?? '').trim();
+      const ratioMode = ratioModeRaw === '智能比例' || ratioModeRaw.includes(':') ? ratioModeRaw : '智能比例';
+      const qualityMode = generationContext.qualityMode === '4K' ? '4K' : '2K';
       const fixed = ratioMode !== '智能比例';
-      const fixedResolved = fixed ? resolveSizeFromRatioMode({ ratioMode, modelId }) : { size: undefined as string | undefined, hint: '' };
+      const fixedResolved = fixed
+        ? resolveSizeFromRatioMode({ ratioMode, qualityMode, modelId })
+        : { size: undefined as string | undefined, hint: '' };
+      const smartResolved = !fixed
+        ? resolveSizeFromRatioMode({ ratioMode: '智能比例', qualityMode, modelId })
+        : { size: undefined as string | undefined, hint: '' };
       const canvasResolved = resolveSizeFromCanvasForModel({
         canvasWidth: canvasSize.width,
         canvasHeight: canvasSize.height,
         modelId,
       });
-      const targetSize = fixed ? fixedResolved.size : canvasResolved.size;
-      const sizeHint = fixed ? fixedResolved.hint : canvasResolved.hint;
+      const requestSize = fixed ? fixedResolved.size : smartResolved.size;
+      const sketchSize = fixed ? fixedResolved.size : canvasResolved.size;
+      const sizeHint = fixed ? fixedResolved.hint : smartResolved.hint || canvasResolved.hint;
 
       const generation = await composeLayoutForGeneration({
         zones: normalizedZones,
@@ -301,10 +309,10 @@ export function SmartLayoutView({ className }: { className?: string }) {
           language: generationContext.language,
           model: modelId,
           ratioMode: fixed ? 'fixed' : 'smart',
-          size: targetSize,
+          size: requestSize,
           stylePreset: generationContext.stylePreset,
         },
-      }, targetSize);
+      }, sketchSize);
 
       const previewMode = settings.showSketchPreviewWithImages ? 'collage' : 'segmentation';
       const previewSketch = await generateLayoutSketch({ zones: normalizedZones, canvasSize, assets: smartLayoutAssets }, previewMode, generation.size);
@@ -315,7 +323,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
         referenceImages: generation.referenceImages,
         globalPrompt: generation.globalPrompt,
         finalPrompt: generation.generateParams.prompt,
-        size: generation.size,
+        size: requestSize ?? generation.size,
         model: modelId,
         sizeHint,
       };

@@ -3,14 +3,8 @@ import type React from 'react';
 import { 
   ChevronDown, 
   Image, 
-  FileText, 
   Globe, 
-  Languages, 
-  Upload, 
-  Palette, 
-  MoreHorizontal,
   Sparkles,
-  Type,
   Ratio,
   ShoppingBag,
   Store,
@@ -27,14 +21,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   MODEL_OPTIONS,
+  QUALITY_OPTIONS,
   RATIO_OPTIONS,
-  STYLE_PRESETS,
   hasGeminiApiKeyConfigured,
   isModelAvailable,
   modelSupportsResolutionToken,
   resolveModelId,
 } from '@/lib/generationContext';
-import { useImageUploadPicker } from '@/hooks/useImageUploadPicker';
 
 interface Platform {
   id: string;
@@ -64,25 +57,15 @@ interface Tag {
 }
 
 const tags: Tag[] = [
-  { id: 'crossborder', label: '跨境设计', icon: Globe, hasDropdown: true },
-  { id: 'detail', label: '详情图', icon: FileText, hasDropdown: true },
   { id: 'model', label: '泰豪生图1.0', icon: Sparkles },
   { id: 'count', label: '6张', icon: Image },
   { id: 'platform', label: 'Amazon（亚马逊）', icon: ShoppingBag, isDropdown: true },
-  { id: 'english', label: '英文', icon: Languages },
-  { id: 'ratio', label: '智能比例', icon: Ratio },
-  { id: 'more', label: '更多', icon: MoreHorizontal, hasDropdown: true },
-  { id: 'style', label: '参考风格', icon: Palette },
-];
-
-const bottomTags: Tag[] = [
-  { id: 'upload', label: '上传文件', icon: Upload },
-  { id: 'text', label: '有文本', icon: Type },
+  { id: 'quality', label: '画质', icon: Sparkles },
+  { id: 'ratio', label: '比例', icon: Ratio },
 ];
 
 export function FeatureTags({ variant: _variant = 'default' }: { variant?: 'default' | 'suite' }) {
   const { activeTags, toggleTag, activeTab, generationContext, updateGenerationContext, uploadedImages } = useAppStore();
-  const { fileInputRef, handleFileUpload, openPicker } = useImageUploadPicker();
   const modelId = resolveModelId(generationContext.model);
   const hasGeminiApiKey = hasGeminiApiKeyConfigured();
 
@@ -90,9 +73,12 @@ export function FeatureTags({ variant: _variant = 'default' }: { variant?: 'defa
 
   const isTagActive = (tagId: string) => activeTags.includes(tagId);
 
-  const visibleTags = tags.filter((t) => ['model', 'count', 'platform', 'ratio'].includes(t.id));
-
-  const visibleBottomTags = bottomTags.filter(() => false);
+  const visibleTags = tags.filter((t) => ['model', 'count', 'platform', 'quality', 'ratio'].includes(t.id));
+  const ratioOptions = RATIO_OPTIONS.filter((r) => r.id === '智能比例' || r.id.includes(':'));
+  const currentRatioMode = ratioOptions.some((r) => r.id === generationContext.ratioMode)
+    ? generationContext.ratioMode
+    : '智能比例';
+  const currentQualityMode = generationContext.qualityMode === '4K' ? '4K' : '2K';
 
   return (
     <motion.div
@@ -101,24 +87,10 @@ export function FeatureTags({ variant: _variant = 'default' }: { variant?: 'defa
       transition={{ duration: 0.5, delay: 0.35 }}
       className="mt-4 space-y-2"
     >
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={handleFileUpload}
-        accept="image/*"
-        multiple
-        className="hidden"
-      />
-
       {/* Main Tags Row */}
       <div className="flex items-center gap-2 flex-wrap">
         {visibleTags.map((tag, index) => {
-          const isActive =
-            tag.id === 'crossborder'
-              ? generationContext.scene === 'crossborder'
-              : tag.id === 'detail'
-                ? generationContext.scene === 'detail' || !generationContext.scene
-                : isTagActive(tag.id);
+          const isActive = isTagActive(tag.id);
           const Icon = tag.icon;
 
           // Platform Dropdown
@@ -246,13 +218,17 @@ export function FeatureTags({ variant: _variant = 'default' }: { variant?: 'defa
                       onClick={() => {
                         if (!isModelAvailable(m.id)) return;
                         const nextImageCount = m.supportsGroupGeneration ? generationContext.imageCount : 1;
-                        const currentRatioMode = (generationContext.ratioMode ?? '智能比例').trim();
-                        let nextRatioMode = currentRatioMode;
-                        if (m.id.includes('seededit-3.0-i2i')) nextRatioMode = '智能比例';
-                        if (currentRatioMode === '1K' && !modelSupportsResolutionToken(m.id, '1K')) nextRatioMode = '智能比例';
-                        if (currentRatioMode === '2K' && !modelSupportsResolutionToken(m.id, '2K')) nextRatioMode = '智能比例';
-                        if (currentRatioMode === '4K' && !modelSupportsResolutionToken(m.id, '4K')) nextRatioMode = '智能比例';
-                        updateGenerationContext({ model: m.label, imageCount: nextImageCount, ratioMode: nextRatioMode });
+                        const nextRatioMode = ratioOptions.some((r) => r.id === generationContext.ratioMode)
+                          ? generationContext.ratioMode
+                          : '智能比例';
+                        const nextQualityMode =
+                          generationContext.qualityMode === '4K' && modelSupportsResolutionToken(m.id, '4K') ? '4K' : '2K';
+                        updateGenerationContext({
+                          model: m.label,
+                          imageCount: nextImageCount,
+                          ratioMode: nextRatioMode,
+                          qualityMode: nextQualityMode,
+                        });
                       }}
                       className="flex items-center justify-between cursor-pointer hover:bg-white/5"
                     >
@@ -267,44 +243,12 @@ export function FeatureTags({ variant: _variant = 'default' }: { variant?: 'defa
             );
           }
 
-          if (tag.id === 'english') {
-            const label = generationContext.language === 'en' ? '英文' : '中文';
-            return (
-              <motion.button
-                key={tag.id}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.4 + index * 0.03 }}
-                onClick={() => {
-                  const next = generationContext.language === 'en' ? 'zh' : 'en';
-                  updateGenerationContext({ language: next });
-                  toggleTag('english');
-                }}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-all duration-200 ${
-                  isActive
-                    ? 'bg-violet-600/30 border border-violet-500/50 text-violet-200'
-                    : 'bg-white/5 border border-white/10 text-white/60 hover:bg-white/10 hover:text-white/80'
-                }`}
-              >
-                {Icon && <Icon className="w-3.5 h-3.5" />}
-                <span>{label}</span>
-                {tag.hasDropdown && <ChevronDown className="w-3 h-3" />}
-              </motion.button>
-            );
-          }
-
-          if (tag.id === 'ratio') {
-            const isSeedEdit = modelId.includes('seededit-3.0-i2i');
-            const optionDisabled = (ratio: string) => {
-              if (isSeedEdit) return ratio !== '智能比例';
-              if (modelId.includes('gemini-3-pro-image-preview') && ratio === '1K') return true;
-              if (ratio === '1K') return !modelSupportsResolutionToken(modelId, '1K');
-              if (ratio === '2K') return !modelSupportsResolutionToken(modelId, '2K');
-              if (ratio === '4K') return !modelSupportsResolutionToken(modelId, '4K');
+          if (tag.id === 'quality') {
+            const optionDisabled = (quality: '2K' | '4K') => {
+              if (quality === '4K') return !modelSupportsResolutionToken(modelId, '4K');
               return false;
             };
+
             return (
               <DropdownMenu key={tag.id}>
                 <DropdownMenuTrigger asChild>
@@ -317,11 +261,6 @@ export function FeatureTags({ variant: _variant = 'default' }: { variant?: 'defa
                     }}
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
-                    title={
-                      activeTab === 'smart_layout'
-                        ? '智能比例随画布宽高比推导输出尺寸；固定比例将显式指定 size'
-                        : undefined
-                    }
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-all duration-200 ${
                       isActive
                         ? 'bg-violet-600/30 border border-violet-500/50 text-violet-200'
@@ -329,23 +268,23 @@ export function FeatureTags({ variant: _variant = 'default' }: { variant?: 'defa
                     }`}
                   >
                     {Icon && <Icon className="w-3.5 h-3.5" />}
-                    <span>{generationContext.ratioMode || tag.label}</span>
+                    <span>{currentQualityMode}</span>
                     <ChevronDown className="w-3 h-3" />
                   </motion.button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="bg-card border-border min-w-[160px]" align="start">
-                  {RATIO_OPTIONS.map((r) => (
+                <DropdownMenuContent className="bg-card border-border min-w-[140px]" align="start">
+                  {QUALITY_OPTIONS.map((q) => (
                     <DropdownMenuItem
-                      key={r.id}
-                      disabled={optionDisabled(r.id)}
+                      key={q.id}
+                      disabled={optionDisabled(q.id)}
                       onClick={() => {
-                        if (optionDisabled(r.id)) return;
-                        updateGenerationContext({ ratioMode: r.id });
+                        if (optionDisabled(q.id)) return;
+                        updateGenerationContext({ qualityMode: q.id });
                       }}
                       className="flex items-center justify-between cursor-pointer hover:bg-white/5"
                     >
-                      <span className="text-white/80">{r.label}</span>
-                      {r.id === generationContext.ratioMode && <span className="text-violet-300">✓</span>}
+                      <span className={optionDisabled(q.id) ? 'text-white/40' : 'text-white/80'}>{q.label}</span>
+                      {q.id === currentQualityMode && <span className="text-violet-300">✓</span>}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
@@ -353,8 +292,7 @@ export function FeatureTags({ variant: _variant = 'default' }: { variant?: 'defa
             );
           }
 
-          if (tag.id === 'style') {
-            const current = generationContext.stylePreset ? generationContext.stylePreset : '参考风格';
+          if (tag.id === 'ratio') {
             return (
               <DropdownMenu key={tag.id}>
                 <DropdownMenuTrigger asChild>
@@ -362,8 +300,12 @@ export function FeatureTags({ variant: _variant = 'default' }: { variant?: 'defa
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ delay: 0.4 + index * 0.03 }}
+                    onClick={() => {
+                      toggleTag(tag.id);
+                    }}
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
+                    title={activeTab === 'smart_layout' ? '固定输出比例' : undefined}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-all duration-200 ${
                       isActive
                         ? 'bg-violet-600/30 border border-violet-500/50 text-violet-200'
@@ -371,71 +313,25 @@ export function FeatureTags({ variant: _variant = 'default' }: { variant?: 'defa
                     }`}
                   >
                     {Icon && <Icon className="w-3.5 h-3.5" />}
-                    <span>{current}</span>
+                    <span>{currentRatioMode || tag.label}</span>
                     <ChevronDown className="w-3 h-3" />
                   </motion.button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="bg-card border-border min-w-[200px]" align="start">
-                  {STYLE_PRESETS.map((s) => (
+                <DropdownMenuContent className="bg-card border-border min-w-[160px]" align="start">
+                  {ratioOptions.map((r) => (
                     <DropdownMenuItem
-                      key={s.id}
+                      key={r.id}
                       onClick={() => {
-                        updateGenerationContext({ stylePreset: s.id === 'none' ? undefined : s.label });
+                        updateGenerationContext({ ratioMode: r.id });
                       }}
                       className="flex items-center justify-between cursor-pointer hover:bg-white/5"
                     >
-                      <span className="text-white/80">{s.label}</span>
-                      {((s.id === 'none' && !generationContext.stylePreset) || s.label === generationContext.stylePreset) && (
-                        <span className="text-violet-300">✓</span>
-                      )}
+                      <span className="text-white/80">{r.label}</span>
+                      {r.id === currentRatioMode && <span className="text-violet-300">✓</span>}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
-            );
-          }
-
-          if (tag.id === 'crossborder') {
-            return (
-              <motion.button
-                key={tag.id}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.4 + index * 0.03 }}
-                onClick={() => updateGenerationContext({ scene: 'crossborder' })}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-all duration-200 ${
-                  isActive
-                    ? 'bg-violet-600/30 border border-violet-500/50 text-violet-200'
-                    : 'bg-white/5 border border-white/10 text-white/60 hover:bg-white/10 hover:text-white/80'
-                }`}
-              >
-                {Icon && <Icon className="w-3.5 h-3.5" />}
-                <span>{tag.label}</span>
-              </motion.button>
-            );
-          }
-
-          if (tag.id === 'detail') {
-            return (
-              <motion.button
-                key={tag.id}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.4 + index * 0.03 }}
-                onClick={() => updateGenerationContext({ scene: 'detail' })}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-all duration-200 ${
-                  isActive
-                    ? 'bg-violet-600/30 border border-violet-500/50 text-violet-200'
-                    : 'bg-white/5 border border-white/10 text-white/60 hover:bg-white/10 hover:text-white/80'
-                }`}
-              >
-                {Icon && <Icon className="w-3.5 h-3.5" />}
-                <span>{tag.label}</span>
-              </motion.button>
             );
           }
 
@@ -468,39 +364,6 @@ export function FeatureTags({ variant: _variant = 'default' }: { variant?: 'defa
       {!hasGeminiApiKey && (
         <div className="text-xs text-amber-300/80 px-1">泰豪生图1.0-pro 已禁用：请配置 `VITE_GOOGLE_API_KEY`</div>
       )}
-      <div className="flex items-center gap-2 flex-wrap">
-        {visibleBottomTags.map((tag, index) => {
-          const isActive = isTagActive(tag.id);
-          const Icon = tag.icon;
-
-          return (
-            <motion.button
-              key={tag.id}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.6 + index * 0.03 }}
-              onClick={() => {
-                if (tag.id === 'upload') {
-                  toggleTag(tag.id);
-                  openPicker();
-                  return;
-                }
-                toggleTag(tag.id);
-              }}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-all duration-200 ${
-                isActive
-                  ? 'bg-violet-600/30 border border-violet-500/50 text-violet-200'
-                  : 'bg-white/5 border border-white/10 text-white/60 hover:bg-white/10 hover:text-white/80'
-              }`}
-            >
-              {Icon && <Icon className="w-3.5 h-3.5" />}
-              <span>{tag.label}</span>
-            </motion.button>
-          );
-        })}
-      </div>
     </motion.div>
   );
 }
