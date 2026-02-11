@@ -1,140 +1,93 @@
 import { motion } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Download, Sparkles } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { Download, Sparkles, Wand2 } from 'lucide-react';
+import { useState } from 'react';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/store/appStore';
 import type { GenerationTask } from '@/store/appStore';
 import { toast } from 'sonner';
 
-interface CaseItem {
+interface TemplateItem {
   id: string;
   image: string;
   title: string;
   description: string;
-  promptTemplate?: string;
+  promptTemplate: string;
   tags: string[];
 }
 
-const cases: CaseItem[] = [
-  { 
-    id: '1', 
-    image: '/images/case-oven.jpg', 
-    title: '智能烤箱',
-    description: '专业厨房电器产品图，现代简约风格，适合亚马逊等跨境电商平台',
-    tags: ['家电', '厨房', '亚马逊']
-  },
-  { 
-    id: '2', 
-    image: '/images/case-chips.jpg', 
-    title: '零食包装',
-    description: '休闲食品产品展示，清新自然风格，突出产品特色',
-    tags: ['食品', '包装', '户外']
-  },
-  { 
-    id: '3', 
-    image: '/images/case-bag.jpg', 
-    title: '时尚手提包',
-    description: '奢侈品风格产品摄影，高端大气，适合品牌展示',
-    tags: ['时尚', '奢侈品', '女包']
-  },
-  { 
-    id: '4', 
-    image: '/images/case-kettle.jpg', 
-    title: '电热水壶',
-    description: '现代家居电器，简约设计，适合多种电商平台',
-    tags: ['家电', '厨房', '日亚']
-  },
-  { 
-    id: '5', 
-    image: '/images/case-headphone.jpg', 
-    title: '无线耳机',
-    description: '科技产品展示，炫酷灯光效果，适合数码产品推广',
-    tags: ['数码', '耳机', '科技']
-  },
+const templates: TemplateItem[] = [
   {
-    id: '6',
-    image: '/images/case-bag.jpg',
-    title: '蝴蝶结',
-    description: '母婴派对细节展示风格，马卡龙配色与柔和布光，突出丝带质感与工艺卖点',
-    promptTemplate:
-      `
-设计一张电商详情页海报。 视觉风格： 清新、梦幻、母婴风、高调照明（High-key lighting）。 色彩方案： 婴儿蓝（Baby Blue）、樱花粉（Cherry Blossom Pink）、纯白。 版式布局：
-	•	Top Header: 浅蓝色不规则波浪背景，中间放置大写字体“PRODUCT DETAILS”。
-	•	Main Scene: 画面中心是一个白色壁炉场景，展示产品（粉蓝蝴蝶结挂旗）的实际挂放效果。环境整洁，光影自然。
-	•	Bottom Insets: 在海报最下方，设计三个等大的圆形蒙版切片。
-	•	左圆：标注“Back view”，展示背面做工。
-	•	中圆：标注“Swallowtail Design”，展示丝带末端的V型剪裁。
-	•	右圆：标注“Silky Luster”，展示手部与蝴蝶结的比例及材质反光。 细节要求： 缎面材质要有真实的丝滑反光感，气球要有通透感，整体画质达到 8k 商业摄影级别。
-
-艺术化字体要求： > * 文案： "Back view", "Swallowtail Design", "Soft Silky Luster"。
-	•	字体风格： 采用优雅的手写花体（Chic Calligraphy Script）或意式现代衬线斜体（Modern Italic Serif）。
-	•	视觉处理： 字体颜色采用深灰蓝（Navy Gray），避免纯黑的生硬感。文字排版要富有节奏感，下方可点缀一条极细的装饰线，增强“电商画报”的精致氛围。`,
-    tags: ['母婴', '派对', '亚马逊'],
+    id: 'bow-detail-template',
+    image: '/images/case-bow.jpg',
+    title: '蝴蝶结商品详情图',
+    description:
+      '梦幻母婴风详情模板，聚焦蝴蝶结缎面高光、工艺细节与场景化展示，适用于亚马逊等跨境电商详情页主图延展。',
+    promptTemplate: `请生成一张高转化电商商品详情图，产品为粉蓝配色蝴蝶结挂旗。
+整体风格：清新梦幻、母婴派对氛围、高调柔光摄影，画面干净通透。
+色彩方案：婴儿蓝、樱花粉、纯白，保持高级和谐。
+版式建议：
+1）顶部使用浅蓝波浪形区块并放置标题“PRODUCT DETAILS”；
+2）中部展示产品在白色壁炉/派对布景中的真实悬挂效果；
+3）底部放置三个圆形细节特写，分别体现背面做工、燕尾剪裁、丝滑光泽。
+文字建议：Back View / Swallowtail Design / Soft Silky Luster。
+字体建议：优雅手写体或现代斜体衬线，颜色使用深灰蓝，整体质感偏精品海报。
+输出要求：商业级清晰度，材质与光影真实自然。`,
+    tags: ['母婴派对', '详情页模板', '丝带质感'],
   },
 ];
 
 export function CaseGallery() {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [selectedCase, setSelectedCase] = useState<CaseItem | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<TemplateItem | null>(null);
   const { setInputValue, addTask, updateTaskStatus, deductCredits } = useAppStore();
+  const currentTemplate = templates[0];
 
-  const scroll = (direction: 'left' | 'right') => {
-    if (scrollRef.current) {
-      const scrollAmount = 300;
-      scrollRef.current.scrollBy({
-        left: direction === 'left' ? -scrollAmount : scrollAmount,
-        behavior: 'smooth',
-      });
-    }
-  };
-
-  const handleUseCase = async (caseItem: CaseItem) => {
-    setSelectedCase(null);
-    setInputValue(caseItem.promptTemplate ?? `生成类似「${caseItem.title}」风格的产品图：${caseItem.description}`);
-    toast.success('已加载案例模板');
+  const handleUseTemplate = (template: TemplateItem) => {
+    setSelectedTemplate(null);
+    setInputValue(template.promptTemplate);
+    toast.success('已加载模板到输入框');
   };
 
   const handleGenerateSimilar = async () => {
-    if (!selectedCase) return;
-    
+    if (!selectedTemplate) return;
+
     if (!deductCredits(10)) {
       toast.error('算力不足，请充值');
       return;
     }
 
-    const currentCase = selectedCase; // Capture closure
-    setSelectedCase(null);
-    
+    const template = selectedTemplate;
+    setSelectedTemplate(null);
+
     const newTask: GenerationTask = {
-        id: Date.now().toString(),
-        type: 'single',
-        status: 'processing',
-        createdAt: Date.now(),
-        input: {
-            prompt: `类似${currentCase.title}风格`,
-            referenceImages: [currentCase.image],
-            model: 'doubao-seedream-4-5-251128'
-        }
+      id: Date.now().toString(),
+      type: 'single',
+      status: 'processing',
+      createdAt: Date.now(),
+      input: {
+        prompt: `类似${template.title}风格`,
+        referenceImages: [template.image],
+        model: 'doubao-seedream-4-5-251128',
+      },
     };
+
     addTask(newTask);
-    
-    // Simulate generation
+
     await new Promise((resolve) => setTimeout(resolve, 2000));
-    
+
     updateTaskStatus(newTask.id, 'success', {
-        images: [{ url: currentCase.image, prompt: newTask.input.prompt }]
+      images: [{ url: template.image, prompt: newTask.input.prompt }],
     });
-    
+
     toast.success('图片生成成功！');
   };
 
   const handleDownload = () => {
-    if (!selectedCase) return;
-    
+    if (!selectedTemplate) return;
+
     const link = document.createElement('a');
-    link.href = selectedCase.image;
-    link.download = `${selectedCase.title}.jpg`;
+    link.href = selectedTemplate.image;
+    link.download = `${selectedTemplate.title}.jpg`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -149,98 +102,92 @@ export function CaseGallery() {
         transition={{ duration: 0.5, delay: 0.6 }}
         className="mt-10"
       >
-        {/* Section Title */}
         <div className="flex items-center gap-3 mb-4">
-          <span className="px-3 py-1.5 rounded-lg bg-white/5 text-white/70 text-sm font-medium border border-white/10">
-            agent案例
+          <span className="px-3 py-1.5 rounded-lg bg-violet-500/10 text-violet-200 text-sm font-medium border border-violet-400/25">
+            模板库
           </span>
+          <span className="text-white/45 text-sm">精选高转化模板，可一键套用</span>
         </div>
 
-        {/* Gallery Container */}
-        <div className="relative group">
-          {/* Left Arrow */}
-          <motion.button
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            whileHover={{ scale: 1.1 }}
-            onClick={() => scroll('left')}
-            className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-black/60 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white/70 hover:text-white hover:bg-black/80 transition-all opacity-0 group-hover:opacity-100"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </motion.button>
+        <div className="rounded-2xl border border-violet-400/20 bg-gradient-to-br from-violet-600/10 via-card/80 to-card/60 p-4 md:p-5">
+          <div className="grid gap-4 md:grid-cols-[320px_1fr] items-stretch">
+            <motion.button
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
+              onClick={() => setSelectedTemplate(currentTemplate)}
+              className="relative overflow-hidden rounded-2xl border border-white/10 aspect-square text-left"
+            >
+              <img
+                src={currentTemplate.image}
+                alt={currentTemplate.title}
+                className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+              <div className="absolute left-3 right-3 bottom-3">
+                <p className="text-white font-medium text-sm">{currentTemplate.title}</p>
+                <p className="text-white/70 text-xs mt-1">点击查看模板详情</p>
+              </div>
+            </motion.button>
 
-          {/* Right Arrow */}
-          <motion.button
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            whileHover={{ scale: 1.1 }}
-            onClick={() => scroll('right')}
-            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-black/60 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white/70 hover:text-white hover:bg-black/80 transition-all opacity-0 group-hover:opacity-100"
-          >
-            <ChevronRight className="w-5 h-5" />
-          </motion.button>
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4 md:p-5 flex flex-col">
+              <div className="flex items-center gap-2 text-violet-200 mb-2">
+                <Wand2 className="w-4 h-4" />
+                <span className="text-sm font-medium">模板说明</span>
+              </div>
 
-          {/* Scrollable Container */}
-          <div
-            ref={scrollRef}
-            className="flex gap-4 overflow-x-auto hide-scrollbar pb-2"
-          >
-            {cases.map((caseItem, index) => (
-              <motion.div
-                key={caseItem.id}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.7 + index * 0.05 }}
-                whileHover={{ scale: 1.02 }}
-                onClick={() => setSelectedCase(caseItem)}
-                className="flex-shrink-0 w-[240px] cursor-pointer group/card"
-              >
-                <div className="relative aspect-square rounded-2xl overflow-hidden border border-white/10 bg-card">
-                  <img
-                    src={caseItem.image}
-                    alt={caseItem.title}
-                    className="w-full h-full object-cover transition-transform duration-500 group-hover/card:scale-105"
-                  />
-                  {/* Overlay */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover/card:opacity-100 transition-opacity duration-300" />
-                  {/* Title */}
-                  <div className="absolute bottom-0 left-0 right-0 p-4 translate-y-full group-hover/card:translate-y-0 transition-transform duration-300">
-                    <p className="text-white font-medium text-sm">{caseItem.title}</p>
-                    <p className="text-white/60 text-xs mt-1">点击查看详情</p>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
+              <h3 className="text-xl md:text-2xl font-semibold text-white mb-2">{currentTemplate.title}</h3>
+              <p className="text-white/65 text-sm leading-6">{currentTemplate.description}</p>
+
+              <div className="flex flex-wrap gap-2 mt-4 mb-5">
+                {currentTemplate.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="px-2.5 py-1 rounded-full text-xs bg-violet-600/20 text-violet-200 border border-violet-500/30"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+
+              <div className="mt-auto flex flex-wrap gap-2">
+                <Button
+                  onClick={() => handleUseTemplate(currentTemplate)}
+                  className="bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500"
+                >
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  一键套用模板
+                </Button>
+                <Button
+                  variant="outline"
+                  className="border-white/15 hover:bg-white/5"
+                  onClick={() => setSelectedTemplate(currentTemplate)}
+                >
+                  查看模板详情
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       </motion.div>
 
-      {/* Case Detail Dialog */}
-      <Dialog open={!!selectedCase} onOpenChange={() => setSelectedCase(null)}>
+      <Dialog open={!!selectedTemplate} onOpenChange={() => setSelectedTemplate(null)}>
         <DialogContent className="max-w-2xl bg-card border-border p-0 overflow-hidden">
-          {selectedCase && (
-            <div className="flex">
-              {/* Image */}
-              <div className="w-1/2 aspect-square">
+          {selectedTemplate && (
+            <div className="flex flex-col md:flex-row">
+              <div className="md:w-1/2 aspect-square">
                 <img
-                  src={selectedCase.image}
-                  alt={selectedCase.title}
+                  src={selectedTemplate.image}
+                  alt={selectedTemplate.title}
                   className="w-full h-full object-cover"
                 />
               </div>
-              
-              {/* Info */}
-              <div className="w-1/2 p-6 flex flex-col">
-                <h3 className="text-xl font-semibold text-white mb-2">
-                  {selectedCase.title}
-                </h3>
-                <p className="text-white/60 text-sm mb-4">
-                  {selectedCase.description}
-                </p>
-                
-                {/* Tags */}
+
+              <div className="md:w-1/2 p-6 flex flex-col">
+                <h3 className="text-xl font-semibold text-white mb-2">{selectedTemplate.title}</h3>
+                <p className="text-white/60 text-sm mb-4 leading-6">{selectedTemplate.description}</p>
+
                 <div className="flex flex-wrap gap-2 mb-6">
-                  {selectedCase.tags.map((tag) => (
+                  {selectedTemplate.tags.map((tag) => (
                     <span
                       key={tag}
                       className="px-2 py-1 rounded-full text-xs bg-violet-600/20 text-violet-300 border border-violet-500/30"
@@ -249,10 +196,10 @@ export function CaseGallery() {
                     </span>
                   ))}
                 </div>
-                
+
                 <div className="mt-auto space-y-2">
                   <Button
-                    onClick={handleUseCase.bind(null, selectedCase)}
+                    onClick={() => handleUseTemplate(selectedTemplate)}
                     className="w-full bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500"
                   >
                     <Sparkles className="w-4 h-4 mr-2" />
