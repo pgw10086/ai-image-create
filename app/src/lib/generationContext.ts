@@ -448,17 +448,35 @@ export function buildPromptWithContext(params: {
   context: GenerationContext;
   allowText: boolean;
   sizeHint?: string;
+  includeSceneHint?: boolean;
+  includePlatformHint?: boolean;
+  includeStyleHint?: boolean;
+  includeLanguageHint?: boolean;
+  includeAllowTextHint?: boolean;
+  blockedFragments?: string[];
 }) {
   const base = (params.basePrompt ?? '').trim();
+  const includeSceneHint = params.includeSceneHint ?? true;
+  const includePlatformHint = params.includePlatformHint ?? true;
+  const includeStyleHint = params.includeStyleHint ?? true;
+  const includeLanguageHint = params.includeLanguageHint ?? true;
+  const includeAllowTextHint = params.includeAllowTextHint ?? true;
   const parts = [
     base,
-    sceneHint(params.context.scene, params.context.language),
-    platformHint(params.context.platformId, params.context.language),
-    styleHint(params.context.stylePreset, params.context.language),
-    languageHint(params.context.language),
-    allowTextHint(params.allowText, params.context.language),
+    includeSceneHint ? sceneHint(params.context.scene, params.context.language) : '',
+    includePlatformHint ? platformHint(params.context.platformId, params.context.language) : '',
+    includeStyleHint ? styleHint(params.context.stylePreset, params.context.language) : '',
+    includeLanguageHint ? languageHint(params.context.language) : '',
+    includeAllowTextHint ? allowTextHint(params.allowText, params.context.language) : '',
     params.sizeHint ?? '',
   ].filter(Boolean);
 
-  return parts.join(' ');
+  let prompt = parts.join(' ');
+  const blockedFragments = params.blockedFragments ?? [];
+  for (const fragment of blockedFragments) {
+    const target = (fragment ?? '').trim();
+    if (!target) continue;
+    prompt = prompt.replaceAll(target, '');
+  }
+  return prompt.replace(/\s+/g, ' ').trim();
 }

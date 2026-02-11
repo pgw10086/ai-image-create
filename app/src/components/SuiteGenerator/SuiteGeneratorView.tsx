@@ -223,6 +223,17 @@ export function SuiteGeneratorView() {
       context: suiteContext,
       allowText,
       sizeHint,
+      includeSceneHint: false,
+      includeStyleHint: false,
+      includeLanguageHint: false,
+      includeAllowTextHint: false,
+      blockedFragments: [
+        '符合亚马逊主图风格：纯白背景（RGB 255,255,255），主体居中且占画面 85% 以上，真实阴影，不要额外文字/水印/Logo/边框，不要不存在的配件。',
+        '跨境电商商品图风格，主体清晰，棚拍质感，灯光专业。',
+        '品牌模型',
+        '使用中文描述。',
+        '包含清晰可读的中文文案，字形规范，避免乱码。',
+      ],
     });
   };
 
