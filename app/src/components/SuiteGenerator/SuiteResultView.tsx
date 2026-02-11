@@ -32,7 +32,7 @@ function downloadByLink(url: string, filename: string) {
 }
 
 export function SuiteResultView() {
-  const { tasks, updateTaskStatus, deductCredits } = useAppStore();
+  const { tasks, updateTaskStatus } = useAppStore();
 
   const suiteTasks = tasks.filter((t) => t.type === 'suite' && t.status === 'success' && t.result?.suite) as Array<
     GenerationTask & { result: { suite: SuiteGenerationResult } }
@@ -84,11 +84,6 @@ export function SuiteResultView() {
   ) => {
     const suite = suiteTask.result.suite;
 
-    if (!deductCredits(10)) {
-      toast.error('算力不足，请充值');
-      return;
-    }
-
     try {
       const isFirst = suite.items[0]?.id === item.id;
       const refImages =
@@ -116,7 +111,6 @@ export function SuiteResultView() {
       updateTaskStatus(suiteTask.id, 'success', { suite: nextSuite });
       toast.success('重试成功');
     } catch (err: any) {
-      deductCredits(-10);
       const nextSuite: SuiteGenerationResult = {
         ...suite,
         items: suite.items.map((it) =>

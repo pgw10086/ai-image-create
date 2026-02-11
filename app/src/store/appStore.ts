@@ -231,11 +231,6 @@ export interface AppState {
   // Selected case
   selectedCase: string | null;
   setSelectedCase: (caseId: string | null) => void;
-  
-  // Credits
-  credits: number;
-  deductCredits: (amount: number) => boolean;
-
   smartLayoutFocusMode: boolean;
   setSmartLayoutFocusMode: (enabled: boolean) => void;
 
@@ -247,7 +242,7 @@ export interface AppState {
 
 export const useAppStore = create<AppState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       // Tab
       activeTab: 'detail',
       setActiveTab: (tab) => set({ activeTab: tab }),
@@ -323,22 +318,6 @@ export const useAppStore = create<AppState>()(
       // Selected case
       selectedCase: null,
       setSelectedCase: (caseId) => set({ selectedCase: caseId }),
-      
-      // Credits
-      credits: 9310,
-      deductCredits: (amount) => {
-        const { credits } = get();
-        if (credits >= amount) {
-          set({ credits: credits - amount });
-          return true;
-        }
-        // Trigger global event for insufficient credits
-        if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('credit-insufficient'));
-        }
-        return false;
-      },
-
       smartLayoutFocusMode: false,
       setSmartLayoutFocusMode: (enabled) => set({ smartLayoutFocusMode: enabled }),
 
@@ -390,7 +369,6 @@ export const useAppStore = create<AppState>()(
         };
       },
       partialize: (state) => ({
-        credits: state.credits,
         tasks: state.tasks,
         activeTags: state.activeTags,
         uploadedImages: state.uploadedImages,

@@ -48,7 +48,6 @@ export function SuiteGeneratorView() {
     addTask,
     updateTaskStatus,
     tasks,
-    deductCredits,
     generationContext,
     activeTags,
     toggleTag,
@@ -405,14 +404,6 @@ export function SuiteGeneratorView() {
       prev.map((p) => (p.id === itemId ? { ...p, status: 'processing', error: undefined } : p))
     );
 
-    if (!deductCredits(10)) {
-      setSuiteItems((prev) =>
-        prev.map((p) => (p.id === itemId ? { ...p, status: 'failed' as const, error: '算力不足，请充值' } : p))
-      );
-      abortRef.current = null;
-      return;
-    }
-
     try {
       const modelId = resolveModelId(generationContext.model);
       if (isTaihaoProModel(modelId) && !hasGeminiApiKeyConfigured()) {
@@ -445,7 +436,6 @@ export function SuiteGeneratorView() {
       syncSuiteToTask(activeSuiteTaskId, next, suiteItems[0]?.images?.[0]?.url ?? images[0]?.url);
       toast.success(mode === 'append' ? '已追加生成' : '已生成完成');
     } catch (err: any) {
-      deductCredits(-10);
       const next = suiteItems.map((p) =>
         p.id === itemId ? { ...p, status: 'failed' as const, error: err?.message || '生成失败，请重试' } : p
       );
@@ -530,8 +520,6 @@ export function SuiteGeneratorView() {
         useFirstImageAsReference,
         concurrency: 2,
         signal: controller.signal,
-        deductCredits,
-        refundCredits: (amount) => deductCredits(-amount),
         onItemUpdate: (itemId, patch) => {
           setSuiteItems((prev) => prev.map((p) => (p.id === itemId ? { ...p, ...patch } : p)));
         },

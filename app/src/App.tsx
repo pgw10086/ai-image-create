@@ -109,7 +109,6 @@ function App() {
                 rel="noopener noreferrer"
                 className="hover:text-foreground transition-colors"
               >
-                粤ICP备2023093796号-3
               </a>
             </div>
           </motion.footer>

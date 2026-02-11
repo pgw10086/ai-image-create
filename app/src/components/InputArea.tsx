@@ -33,7 +33,6 @@ export function InputArea() {
     addTask,
     updateTaskStatus,
     tasks,
-    deductCredits,
     generationContext,
     activeTags,
   } = useAppStore();
@@ -55,11 +54,6 @@ export function InputArea() {
   const handleGenerate = async () => {
     if (!inputValue.trim() && uploadedImages.length === 0) {
       toast.error('请输入创作内容或上传产品图');
-      return;
-    }
-
-    if (!deductCredits(10)) {
-      toast.error('算力不足，请充值');
       return;
     }
 
@@ -128,14 +122,10 @@ export function InputArea() {
       } else {
         const errorMsg = response.error?.message || response.message || '生成失败，请重试';
         updateTaskStatus(newTask.id, 'failed', errorMsg);
-        toast.error(errorMsg);
-        deductCredits(-10);
-      }
+        toast.error(errorMsg);      }
     } catch (error) {
       updateTaskStatus(newTask.id, 'failed', '生成过程中出现错误');
-      toast.error('生成过程中出现错误');
-      deductCredits(-10);
-    }
+      toast.error('生成过程中出现错误');    }
   };
 
   const handleAIWrite = () => {

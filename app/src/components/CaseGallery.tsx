@@ -39,7 +39,7 @@ const templates: TemplateItem[] = [
 
 export function CaseGallery() {
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateItem | null>(null);
-  const { setInputValue, addTask, updateTaskStatus, deductCredits } = useAppStore();
+  const { setInputValue, addTask, updateTaskStatus } = useAppStore();
   const currentTemplate = templates[0];
 
   const handleUseTemplate = (template: TemplateItem) => {
@@ -50,11 +50,6 @@ export function CaseGallery() {
 
   const handleGenerateSimilar = async () => {
     if (!selectedTemplate) return;
-
-    if (!deductCredits(10)) {
-      toast.error('算力不足，请充值');
-      return;
-    }
 
     const template = selectedTemplate;
     setSelectedTemplate(null);
@@ -171,10 +166,10 @@ export function CaseGallery() {
       </motion.div>
 
       <Dialog open={!!selectedTemplate} onOpenChange={() => setSelectedTemplate(null)}>
-        <DialogContent className="max-w-2xl bg-card border-border p-0 overflow-hidden">
+        <DialogContent className="w-[min(94vw,960px)] max-w-[960px] bg-card border-border p-0 overflow-hidden">
           {selectedTemplate && (
-            <div className="flex flex-col md:flex-row">
-              <div className="md:w-1/2 aspect-square">
+            <div className="grid md:grid-cols-[1.05fr_1fr] max-h-[85vh]">
+              <div className="aspect-square md:aspect-auto md:h-full bg-black/20">
                 <img
                   src={selectedTemplate.image}
                   alt={selectedTemplate.title}
@@ -182,8 +177,8 @@ export function CaseGallery() {
                 />
               </div>
 
-              <div className="md:w-1/2 p-6 flex flex-col">
-                <h3 className="text-xl font-semibold text-white mb-2">{selectedTemplate.title}</h3>
+              <div className="p-6 flex flex-col min-w-0 overflow-y-auto">
+                <h3 className="text-xl font-semibold text-white mb-2 pr-8 leading-tight">{selectedTemplate.title}</h3>
                 <p className="text-white/60 text-sm mb-4 leading-6">{selectedTemplate.description}</p>
 
                 <div className="flex flex-wrap gap-2 mb-6">
@@ -210,7 +205,7 @@ export function CaseGallery() {
                     onClick={handleGenerateSimilar}
                     className="w-full border-white/10 hover:bg-white/5"
                   >
-                    生成类似图片 (10算力)
+                    生成类似图片
                   </Button>
                   <Button
                     variant="ghost"

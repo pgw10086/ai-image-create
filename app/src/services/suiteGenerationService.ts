@@ -72,8 +72,6 @@ export async function executeSuiteGeneration(params: {
     }
   >;
   signal?: AbortSignal;
-  deductCredits?: (amount: number) => boolean;
-  refundCredits?: (amount: number) => void;
   onItemUpdate?: (itemId: string, patch: Partial<SuiteItemResult>) => void;
 }) {
   const concurrency = Math.max(1, Math.min(4, params.concurrency ?? 2));
@@ -106,11 +104,6 @@ export async function executeSuiteGeneration(params: {
 
     update(itemId, { status: 'processing', error: undefined });
 
-    if (params.deductCredits && !params.deductCredits(10)) {
-      update(itemId, { status: 'failed', error: '算力不足，请充值' });
-      return;
-    }
-
     try {
       const item = items.find((x) => x.id === itemId);
       if (!item) return;
@@ -129,7 +122,6 @@ export async function executeSuiteGeneration(params: {
       update(itemId, { status: 'success', images });
     } catch (err: any) {
       update(itemId, { status: 'failed', error: err?.message || '生成失败，请重试' });
-      params.refundCredits?.(10);
     }
   };
 

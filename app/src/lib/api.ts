@@ -509,7 +509,7 @@ function mapErrorMessage(originalMessage: string): string {
   const msg = originalMessage.toLowerCase();
   if (msg.includes('content_policy_violation')) return '内容包含违规信息，请修改后重试';
   if (msg.includes('rate limit')) return '请求过于频繁，请稍后再试';
-  if (msg.includes('quota')) return '账户额度不足，请充值';
+  if (msg.includes('quota')) return '请求资源不足，请稍后重试';
   if (msg.includes('timeout')) return '生成超时，请检查网络或重试';
   if (msg.includes('api key')) return 'API Key 无效或未配置，请检查配置';
   if (msg.includes('not found') || msg.includes('http_404') || msg.includes('404')) {
