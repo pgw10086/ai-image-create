@@ -39,11 +39,17 @@ const templates: TemplateItem[] = [
 
 export function CaseGallery() {
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateItem | null>(null);
-  const { setInputValue, addTask, updateTaskStatus } = useAppStore();
+  const { setInputValue, setInputTemplatePreset, addTask, updateTaskStatus } = useAppStore();
   const currentTemplate = templates[0];
 
   const handleUseTemplate = (template: TemplateItem) => {
     setSelectedTemplate(null);
+    if (template.id === 'bow-detail-template') {
+      setInputTemplatePreset('bow-detail');
+      toast.success('已加载蝴蝶结变量模板');
+      return;
+    }
+    setInputTemplatePreset('none');
     setInputValue(template.promptTemplate);
     toast.success('已加载模板到输入框');
   };

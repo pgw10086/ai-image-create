@@ -210,6 +210,8 @@ export interface AppState {
   // Input
   inputValue: string;
   setInputValue: (value: string) => void;
+  inputTemplatePreset: 'none' | 'bow-detail';
+  setInputTemplatePreset: (preset: 'none' | 'bow-detail') => void;
   
   // Active tags
   activeTags: string[];
@@ -257,6 +259,8 @@ export const useAppStore = create<AppState>()(
       // Input
       inputValue: '',
       setInputValue: (value) => set({ inputValue: value }),
+      inputTemplatePreset: 'none',
+      setInputTemplatePreset: (preset) => set({ inputTemplatePreset: preset }),
       
       // Tags
       activeTags: ['detail', 'amazon', 'english'],

@@ -329,7 +329,7 @@ async function generateByGemini(params: GenerateImageParams): Promise<GenerateIm
       const textFallback =
         (typeof response?.text === 'string' ? response.text : '') ||
         response?.candidates?.[0]?.content?.parts?.find?.((part: any) => part?.text)?.text;
-      const message = textFallback || 'Gemini 未返回图像数据';
+      const message = textFallback || '未返回图像数据';
       return {
         code: APIErrorCodes.UNKNOWN,
         message,
