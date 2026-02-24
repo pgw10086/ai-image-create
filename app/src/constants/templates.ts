@@ -24,11 +24,11 @@ export const suiteTemplates: SuiteTemplate[] = [
   {
     id: 'suite-bow-lace-girls',
     name: '蝴蝶结套图模板',
-    description: '围绕黑色蕾丝蝴蝶结：标准产品图 + 模特效果图 + 尺寸参考图。',
+    description: '围绕黑色蕾丝蝴蝶结：标准产品图 + 模特效果图 + 尺寸参考图 + 尺寸标注图。',
     coverImage:
       createMockImageDataUri({ title: '蝴蝶结套图模板', subtitle: '饰品配件模板', width: 1200, height: 675 }),
-    availableShotIds: ['bow-standard-product', 'bow-model-portrait', 'bow-size-reference'],
-    defaultShotIds: ['bow-standard-product', 'bow-model-portrait', 'bow-size-reference'],
+    availableShotIds: ['bow-standard-product', 'bow-model-portrait', 'bow-size-reference', 'bow-size-annotated'],
+    defaultShotIds: ['bow-standard-product', 'bow-model-portrait', 'bow-size-reference', 'bow-size-annotated'],
   },
   {
     id: 'suite-amazon-main-compliance',

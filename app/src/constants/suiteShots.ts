@@ -29,6 +29,15 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultImageCount: 2,
   },
   {
+    id: 'bow-size-annotated',
+    name: '尺寸标注图',
+    description: '平铺展示并带横纵尺寸标注线，直观传达实际规格。',
+    defaultPromptSuffixZh:
+      '一只黑色蕾丝蝴蝶结平铺在浅米粉背景中央，居中构图，中心有珍珠装饰。添加清晰的尺寸标注线与文字：横向标注 8.5cm/3.35inch，纵向标注 6.5cm/2.56inch。标注风格简洁专业，黑色细线与文字，画面干净，细节清晰，电商尺寸说明图风格。',
+    defaultRatioMode: '3:4',
+    defaultImageCount: 2,
+  },
+  {
     id: 'jewelry-rack-white-product',
     name: '白色产品白底图',
     description: '纯白背景商品主图，强调金属质感与电商展示清晰度。',

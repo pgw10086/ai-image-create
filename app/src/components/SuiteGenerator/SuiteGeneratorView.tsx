@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { ChevronDown, ChevronUp, Loader2, Plus, RotateCcw, Send, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Loader2, Plus, RotateCcw, Send, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { useAppStore } from '@/store/appStore';
@@ -19,7 +19,6 @@ import { useImageUploadPicker } from '@/hooks/useImageUploadPicker';
 import { getSuiteShotById } from '@/constants/suiteShots';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -839,7 +838,16 @@ export function SuiteGeneratorView() {
                       disabled={isGenerating}
                     >
                       <div className="flex items-start gap-3">
-                        <Checkbox checked={checked} className="mt-0.5" />
+                        <span
+                          aria-hidden="true"
+                          className={`mt-0.5 inline-flex h-4 w-4 items-center justify-center rounded-[4px] border transition-colors ${
+                            checked
+                              ? 'border-primary bg-primary text-primary-foreground'
+                              : 'border-input bg-background'
+                          }`}
+                        >
+                          {checked ? <Check className="h-3.5 w-3.5" /> : null}
+                        </span>
                         <div className="min-w-0">
                           <div className="text-sm text-white/90">{shot.name}</div>
                           {shot.description && <div className="text-xs text-white/50 mt-1">{shot.description}</div>}
