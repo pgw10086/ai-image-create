@@ -65,6 +65,15 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultImageCount: 2,
   },
   {
+    id: 'jewelry-rack-product-scene',
+    name: '产品场景图',
+    description: '桌面静物生活方式场景，不出镜人物，突出家居氛围与收纳质感。',
+    defaultPromptSuffixZh:
+      '生活方式产品摄影，明亮干净的家居桌面场景，浅木色桌面与白墙背景，首饰储物架作为画面主体置于桌面中央，挂有项链与耳饰，周围搭配简洁置物架、绿植、小摆件等软装。自然侧光，柔和阴影，色调温暖克制，构图整洁，真实高端电商场景图风格，无人物出镜，无杂乱背景。',
+    defaultRatioMode: '16:9',
+    defaultImageCount: 2,
+  },
+  {
     id: 'jewelry-rack-model-scene',
     name: '模特场景图',
     description: '卧室梳妆台生活方式场景，营造高品质真实氛围。',

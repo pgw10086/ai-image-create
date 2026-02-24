@@ -5,18 +5,20 @@ export const suiteTemplates: SuiteTemplate[] = [
   {
     id: 'suite-jewelry-rack-storage',
     name: '首饰储物架套图模板',
-    description: '覆盖白底主图、尺寸标注、模特场景与功能卖点分解，适合首饰收纳类商品页。',
+    description: '覆盖白底主图、尺寸标注、产品场景、模特场景与功能卖点分解，适合首饰收纳类商品页。',
     coverImage:
       createMockImageDataUri({ title: '首饰储物架套图模板', subtitle: '家居收纳模板', width: 1200, height: 675 }),
     availableShotIds: [
       'jewelry-rack-white-product',
       'jewelry-rack-size-annotated',
+      'jewelry-rack-product-scene',
       'jewelry-rack-model-scene',
       'jewelry-rack-feature-breakdown',
     ],
     defaultShotIds: [
       'jewelry-rack-white-product',
       'jewelry-rack-size-annotated',
+      'jewelry-rack-product-scene',
       'jewelry-rack-model-scene',
       'jewelry-rack-feature-breakdown',
     ],
