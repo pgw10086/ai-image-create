@@ -38,6 +38,15 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultImageCount: 2,
   },
   {
+    id: 'bow-wig-reference',
+    name: '假发参考图',
+    description: '浅金色假发佩戴展示，突出真实佩戴位置与发丝质感。',
+    defaultPromptSuffixZh:
+      '背面视角的假发展示图，浅金色发丝铺满画面，一只黑色蕾丝蝴蝶结固定在头发中部位置，中心珍珠清晰可见。背景为浅米色，光线柔和均匀，画面干净，细节清晰，电商佩戴参考图风格。',
+    defaultRatioMode: '16:9',
+    defaultImageCount: 2,
+  },
+  {
     id: 'jewelry-rack-white-product',
     name: '白色产品白底图',
     description: '纯白背景商品主图，强调金属质感与电商展示清晰度。',
