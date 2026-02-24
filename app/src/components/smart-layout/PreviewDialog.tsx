@@ -43,11 +43,15 @@ export function PreviewDialog({
 }: PreviewDialogProps) {
   const [imageMode, setImageMode] = useState<'final' | 'preview'>('final');
   const [variantStyles, setVariantStyles] = useState<string[]>(['', '', '']);
+  const [showGlobalPrompt, setShowGlobalPrompt] = useState(false);
+  const [showSystemPrompt, setShowSystemPrompt] = useState(false);
 
   useEffect(() => {
     if (open) {
       setImageMode('final');
       setVariantStyles(['', '', '']);
+      setShowGlobalPrompt(false);
+      setShowSystemPrompt(false);
     }
   }, [open]);
 
@@ -122,27 +126,55 @@ export function PreviewDialog({
             </div>
 
             <div className="w-1/3 flex flex-col gap-2">
-              <span className="text-sm font-medium text-white/70">
-                GLOBAL_PROMPT（可编辑）
-              </span>
-              <Textarea
-                value={globalPrompt}
-                onChange={(e) => onGlobalPromptChange(e.target.value)}
-                className="min-h-[120px] bg-white/5 border-white/10 text-white placeholder:text-white/40"
-                placeholder="请输入 GLOBAL_PROMPT"
-              />
-
-              <span className="text-sm font-medium text-white/70">
-                最终提示词（可编辑）
-              </span>
-              <ScrollArea className="flex-1 border border-white/10 rounded-md p-2 bg-white/5">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-white/70">
+                  全局提示词（高级）
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 text-xs text-white/70 hover:text-white hover:bg-white/10"
+                  onClick={() => setShowGlobalPrompt((prev) => !prev)}
+                  disabled={isGenerating}
+                >
+                  {showGlobalPrompt ? '折叠' : '展开'}
+                </Button>
+              </div>
+              {showGlobalPrompt ? (
                 <Textarea
-                  value={finalPrompt}
-                  onChange={(e) => onFinalPromptChange(e.target.value)}
-                  className="min-h-[260px] bg-transparent border-0 text-white placeholder:text-white/40 resize-none focus-visible:ring-0"
-                  placeholder="请输入最终提交的提示词"
+                  value={globalPrompt}
+                  onChange={(e) => onGlobalPromptChange(e.target.value)}
+                  className="min-h-[120px] bg-white/5 border-white/10 text-white placeholder:text-white/40"
+                  placeholder="请输入全局提示词"
                 />
-              </ScrollArea>
+              ) : null}
+
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-white/70">
+                  系统提示词（高级）
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 text-xs text-white/70 hover:text-white hover:bg-white/10"
+                  onClick={() => setShowSystemPrompt((prev) => !prev)}
+                  disabled={isGenerating}
+                >
+                  {showSystemPrompt ? '折叠' : '展开'}
+                </Button>
+              </div>
+              {showSystemPrompt ? (
+                <ScrollArea className="flex-1 border border-white/10 rounded-md p-2 bg-white/5">
+                  <Textarea
+                    value={finalPrompt}
+                    onChange={(e) => onFinalPromptChange(e.target.value)}
+                    className="min-h-[260px] bg-transparent border-0 text-white placeholder:text-white/40 resize-none focus-visible:ring-0"
+                    placeholder="请输入最终提交的提示词"
+                  />
+                </ScrollArea>
+              ) : null}
 
               <div className="pt-2 border-t border-white/10">
                 <div className="text-sm font-medium text-white/70">风格变体（同一素材不同风格）</div>
