@@ -92,6 +92,15 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultImageCount: 2,
   },
   {
+    id: 'jewelry-rack-category-showcase',
+    name: '收纳品类展示图',
+    description: '信息图布局，展示可收纳的饰品与小物品类目。',
+    defaultPromptSuffixZh:
+      '一张高端电商产品详情主图，采用明确的左右构图。左侧区域展示首饰收纳架产品实物并挂有多种首饰，挂满各式珠宝并置于白色底座上（请生成一个符合此描述的精美产品实拍图）。右侧区域是一个带有圆角的白色信息面板，顶部印有棕金色艺术字体标题“4 Tier Jewelry Organizer Stand”。面板下方整齐排列两行蓝色线条风格矢量图标，并配有对应的金色文字说明：第一行包括项链图标配文“for Necklaces”、手链图标配文“for Bracelets”、耳环图标配文“for Earring”；第二行包括口红图标配文“for Lipsticks”、香水图标配文“for Perfumes”、别针图标配文“for Pins”、蝴蝶结发饰图标配文“Hair Accessories”。整体风格为干净柔和的米色背景、均匀明亮光线、极简主义商业摄影质感，重点突出右侧信息图与左侧产品的对应关系。',
+    defaultRatioMode: '16:9',
+    defaultImageCount: 2,
+  },
+  {
     id: 'front',
     name: '正视主图',
     description: '主体居中、纯净背景，适合电商主图与封面。',
