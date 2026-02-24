@@ -101,6 +101,15 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultImageCount: 2,
   },
   {
+    id: 'jewelry-rack-gift-scene-collage',
+    name: '礼赠场景拼图',
+    description: '左产品右生活方式拼图，强调节日送礼与家庭情感氛围。',
+    defaultPromptSuffixZh:
+      '一张高端电商详情图，采用左窄右宽的分栏构图。左侧为金色四层首饰收纳架产品实拍图，置于白色底座，挂有项链、耳环与戒指，仅保留产品主体，不要出现桌面摆件、绿植、杯子、书本等任何背景杂物。右侧为三宫格式生活方式拼图：中间偏左一张主图展示情侣送礼互动，右上和右下两张展示母女/姐妹或儿童收到礼物的温馨场景，人物表情自然真实。整体叠加优雅手写体文案“Nice Gift”，整张图统一使用干净柔和的米色背景，光线柔和均匀，画质清晰，商业摄影风格，突出“首饰架适合作为礼物”的卖点。',
+    defaultRatioMode: '16:9',
+    defaultImageCount: 2,
+  },
+  {
     id: 'front',
     name: '正视主图',
     description: '主体居中、纯净背景，适合电商主图与封面。',
