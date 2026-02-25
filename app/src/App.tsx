@@ -58,16 +58,10 @@ function App() {
 
           {activeTab === 'smart_layout' ? (
             <>
-              {isSmartLayoutFocus ? (
-                <SmartLayoutView className="h-full rounded-none border-0" />
-              ) : (
-                <>
-                  <FeatureTags />
-                  <div className="mt-6">
-                    <SmartLayoutView />
-                  </div>
-                </>
-              )}
+              {!isSmartLayoutFocus ? <FeatureTags /> : null}
+              <div className={isSmartLayoutFocus ? "h-full" : "mt-6"}>
+                <SmartLayoutView className={isSmartLayoutFocus ? "h-full rounded-none border-0" : undefined} />
+              </div>
             </>
           ) : (
             <>
