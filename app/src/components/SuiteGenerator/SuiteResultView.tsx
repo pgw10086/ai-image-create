@@ -1,8 +1,10 @@
 import { motion } from 'framer-motion';
 import JSZip from 'jszip';
-import { Clock, Download, RefreshCcw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Clock, Download, RefreshCcw } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useAppStore } from '@/store/appStore';
 import type { GenerationTask } from '@/store/appStore';
 import type { SuiteGenerationResult, SuiteItemResult } from '@/types/suite';
@@ -31,8 +33,15 @@ function downloadByLink(url: string, filename: string) {
   document.body.removeChild(link);
 }
 
+type PreviewDialogState = {
+  itemName: string;
+  images: Array<{ url: string; filename: string }>;
+  activeIndex: number;
+};
+
 export function SuiteResultView() {
   const { tasks, updateTaskStatus } = useAppStore();
+  const [previewState, setPreviewState] = useState<PreviewDialogState | null>(null);
 
   const suiteTasks = tasks.filter((t) => t.type === 'suite' && t.status === 'success' && t.result?.suite) as Array<
     GenerationTask & { result: { suite: SuiteGenerationResult } }
@@ -122,6 +131,40 @@ export function SuiteResultView() {
     }
   };
 
+  const openPreview = (item: SuiteItemResult, startIndex: number) => {
+    const images = (item.images ?? []).filter((img) => img?.url);
+    if (images.length === 0) return;
+
+    setPreviewState({
+      itemName: item.name,
+      images: images.map((img, idx) => ({
+        url: img.url,
+        filename: `${sanitizeFilename(item.name)}_${String(idx + 1).padStart(2, '0')}${guessExt(img.url)}`,
+      })),
+      activeIndex: Math.min(startIndex, images.length - 1),
+    });
+  };
+
+  const currentPreviewImage = useMemo(() => {
+    if (!previewState) return null;
+    return previewState.images[previewState.activeIndex] ?? null;
+  }, [previewState]);
+
+  const changePreviewIndex = (nextIndex: number) => {
+    setPreviewState((prev) => {
+      if (!prev || prev.images.length === 0) return prev;
+      const total = prev.images.length;
+      const normalizedIndex = ((nextIndex % total) + total) % total;
+      return { ...prev, activeIndex: normalizedIndex };
+    });
+  };
+
+  const downloadCurrentPreview = () => {
+    if (!currentPreviewImage) return;
+    downloadByLink(currentPreviewImage.url, currentPreviewImage.filename);
+    toast.success('图片下载中...');
+  };
+
   if (suiteTasks.length === 0) return null;
 
   return (
@@ -179,10 +222,8 @@ export function SuiteResultView() {
                             <button
                               key={`${it.id}-${idx}`}
                               type="button"
-                              className="aspect-square bg-black/30 overflow-hidden"
-                              onClick={() =>
-                                downloadByLink(img.url, `${sanitizeFilename(it.name)}_${String(idx + 1).padStart(2, '0')}${guessExt(img.url)}`)
-                              }
+                              className="aspect-square bg-black/30 overflow-hidden cursor-zoom-in"
+                              onClick={() => openPreview(it, idx)}
                             >
                               <img src={img.url} alt={it.name} className="w-full h-full object-cover" />
                             </button>
@@ -243,6 +284,78 @@ export function SuiteResultView() {
           );
         })}
       </div>
+
+      <Dialog open={Boolean(previewState)} onOpenChange={(open) => !open && setPreviewState(null)}>
+        <DialogContent className="sm:max-w-5xl max-h-[92vh] p-0 gap-0 overflow-hidden border-white/10 bg-[#0f1117] text-white">
+          {previewState && currentPreviewImage && (
+            <>
+              <DialogHeader className="border-b border-white/10 px-4 py-3">
+                <div className="flex items-center justify-between gap-3 pr-8">
+                  <DialogTitle className="text-base font-medium truncate">{previewState.itemName || '图片预览'}</DialogTitle>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className="text-xs text-white/60">
+                      {previewState.activeIndex + 1}/{previewState.images.length}
+                    </span>
+                    <Button type="button" variant="outline" size="sm" onClick={downloadCurrentPreview}>
+                      <Download className="w-4 h-4" />
+                      下载当前图
+                    </Button>
+                  </div>
+                </div>
+              </DialogHeader>
+
+              <div className="relative bg-black/70 px-4 py-4 sm:px-8">
+                <img
+                  src={currentPreviewImage.url}
+                  alt={`${previewState.itemName}-${previewState.activeIndex + 1}`}
+                  className="mx-auto max-h-[68vh] w-auto max-w-full object-contain rounded-md"
+                />
+
+                {previewState.images.length > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full border border-white/15 bg-black/55 text-white/85 hover:bg-black/75 transition-colors flex items-center justify-center"
+                      onClick={() => changePreviewIndex(previewState.activeIndex - 1)}
+                    >
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+                    <button
+                      type="button"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full border border-white/15 bg-black/55 text-white/85 hover:bg-black/75 transition-colors flex items-center justify-center"
+                      onClick={() => changePreviewIndex(previewState.activeIndex + 1)}
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {previewState.images.length > 1 && (
+                <div className="border-t border-white/10 px-4 py-3">
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {previewState.images.map((img, idx) => {
+                      const active = idx === previewState.activeIndex;
+                      return (
+                        <button
+                          key={`${img.url}-${idx}`}
+                          type="button"
+                          onClick={() => changePreviewIndex(idx)}
+                          className={`w-16 h-16 rounded-md overflow-hidden border flex-shrink-0 ${
+                            active ? 'border-violet-400' : 'border-white/15'
+                          }`}
+                        >
+                          <img src={img.url} alt={`${previewState.itemName}-thumb-${idx + 1}`} className="w-full h-full object-cover" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </motion.div>
   );
 }
