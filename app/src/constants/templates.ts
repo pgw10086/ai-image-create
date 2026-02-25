@@ -100,60 +100,6 @@ export const suiteTemplates: SuiteTemplate[] = [
     defaultShotIds: ['angle45', 'scene', 'detail'],
   },
   {
-    id: 'suite-fashion-apparel',
-    name: '服饰箱包套图',
-    description: '覆盖正面、上身/上脚、材质与颜色，适配服饰类海外平台商品页。',
-    coverImage:
-      createMockImageDataUri({ title: '服饰箱包套图', subtitle: '海外电商模板', width: 1200, height: 675 }),
-    availableShotIds: ['front', 'angle45', 'on-foot', 'scene', 'material-closeup', 'color-variants', 'scale-reference'],
-    defaultShotIds: ['front', 'on-foot', 'material-closeup', 'color-variants'],
-  },
-  {
-    id: 'suite-3c-digital',
-    name: '3C 数码套图',
-    description: '覆盖主图、侧视与使用场景，适合耳机/手表/小家电等。',
-    coverImage:
-      createMockImageDataUri({ title: '3C 数码套图', subtitle: '套图模版', width: 1200, height: 675 }),
-    availableShotIds: ['front', 'side', 'angle45', 'detail', 'scene', 'in-hand'],
-    defaultShotIds: ['front', 'side', 'scene'],
-  },
-  {
-    id: 'suite-3c-amazon-pro',
-    name: '3C 科技专业组',
-    description: '适合 3C 与小电器：结构视图 + 手持尺度 + 清单 + 功能信息图。',
-    coverImage:
-      createMockImageDataUri({ title: '3C 科技专业组', subtitle: '海外电商模板', width: 1200, height: 675 }),
-    availableShotIds: ['front', 'side', 'angle45', 'in-hand', 'scale-reference', 'what-in-box', 'feature-callout', 'detail'],
-    defaultShotIds: ['front', 'in-hand', 'what-in-box', 'feature-callout'],
-  },
-  {
-    id: 'suite-shoes',
-    name: '鞋靴全能套图',
-    description: '主图 + 侧视 + 细节 + 上脚场景，强调材质与轮廓。',
-    coverImage:
-      createMockImageDataUri({ title: '鞋靴全能套图', subtitle: '套图模版', width: 1200, height: 675 }),
-    availableShotIds: ['front', 'angle45', 'side', 'detail', 'on-foot', 'scene'],
-    defaultShotIds: ['front', 'angle45', 'detail', 'on-foot'],
-  },
-  {
-    id: 'suite-home-kitchen',
-    name: '家居厨具实用组',
-    description: '突出容量/尺寸/安装与使用步骤，适配家居、厨具、收纳类目。',
-    coverImage:
-      createMockImageDataUri({ title: '家居厨具实用组', subtitle: '海外电商模板', width: 1200, height: 675 }),
-    availableShotIds: [
-      'front',
-      'angle45',
-      'scene',
-      'usage-step',
-      'what-in-box',
-      'scale-reference',
-      'before-after',
-      'detail',
-    ],
-    defaultShotIds: ['front', 'scene', 'usage-step', 'scale-reference'],
-  },
-  {
     id: 'suite-multi-variant',
     name: '多规格多颜色组',
     description: '适合同款多 SKU：主图 + 颜色矩阵 + 对比 + 场景，降低选款成本。',
