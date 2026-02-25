@@ -27,12 +27,13 @@ const tabs: Tab[] = [
 ];
 
 export function MainTabs() {
-  const { activeTab, setActiveTab } = useAppStore();
+  const { activeTab, setActiveTab, updateGenerationContext } = useAppStore();
   const uiActiveTab = activeTab === 'smart_layout' ? 'smart_layout' : 'crossborder';
 
   const handleTabChange = (tabId: 'crossborder' | 'smart_layout') => {
     if (tabId === 'crossborder') {
       setActiveTab('detail');
+      updateGenerationContext({ scene: 'crossborder' });
     } else {
       setActiveTab('smart_layout');
     }

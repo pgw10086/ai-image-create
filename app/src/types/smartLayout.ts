@@ -96,20 +96,43 @@ export interface LayoutCompositionRequest {
   renderMode: 'collage' | 'segmentation';
   context?: GenerationContext;
   assets?: SmartLayoutAsset[];
+  promptSettings?: {
+    enableRegionPrompts?: boolean;
+    enableDepthTree?: boolean;
+  };
 }
 
 export type PromptStrategy = 'concat' | 'weighted';
 
 export interface GenerationContext {
   scene: 'single' | 'detail' | 'crossborder' | 'brand';
-  platformId?: 'amazon' | 'temu' | 'shopee' | 'tiktok' | 'aliexpress' | 'alibaba';
-  platform?: 'amazon' | 'temu' | 'shopee' | 'tiktok' | 'aliexpress' | 'alibaba';
+  platformId?:
+    | 'amazon'
+    | 'temu'
+    | 'shopee'
+    | 'tiktok'
+    | 'aliexpress'
+    | 'alibaba'
+    | 'lazada'
+    | 'ebay'
+    | 'shein';
+  platform?:
+    | 'amazon'
+    | 'temu'
+    | 'shopee'
+    | 'tiktok'
+    | 'aliexpress'
+    | 'alibaba'
+    | 'lazada'
+    | 'ebay'
+    | 'shein';
   language?: 'zh' | 'en';
   model?: string;
   imageCount?: number;
   ratioMode?: 'smart' | 'fixed';
   stylePreset?: string;
   size?: string;
+  allowText?: boolean;
 }
 
 export interface RegionPrompt {

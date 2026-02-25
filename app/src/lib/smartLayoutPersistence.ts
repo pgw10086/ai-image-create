@@ -185,6 +185,68 @@ export function importSmartLayoutTemplatesFromJson(raw: string) {
   };
 }
 
+export function importDefaultSmartLayoutTemplatesFromJson(raw: string) {
+  const parsed = safeParseJson<unknown>(raw);
+  if (!parsed) return { imported: 0, next: loadSmartLayoutTemplates() };
+  const candidates: unknown[] =
+    Array.isArray(parsed)
+      ? parsed
+      : isRecord(parsed) && Array.isArray(parsed.templates)
+        ? (parsed.templates as unknown[])
+        : [parsed];
+  const existing = loadSmartLayoutTemplates();
+  const existingIds = new Set(existing.map((t) => t.id));
+  const now = Date.now();
+  const imported: SmartLayoutTemplateV1[] = [];
+
+  for (const c of candidates) {
+    if (!isRecord(c) || c.schemaVersion !== 1) continue;
+    const payload = c.payload;
+    if (!isRecord(payload)) continue;
+    const canvasSizeRaw = payload.canvasSize;
+    const settingsRaw = payload.settings;
+    const zonesRaw = payload.zones;
+    if (!isRecord(canvasSizeRaw) || !isRecord(settingsRaw) || !Array.isArray(zonesRaw)) continue;
+
+    const idRaw = c.id;
+    if (typeof idRaw !== 'string' || existingIds.has(idRaw)) continue;
+
+    const nameRaw = c.name;
+    const name = typeof nameRaw === 'string' && nameRaw.trim() ? nameRaw.trim() : '未命名模板';
+    const template: SmartLayoutTemplateV1 = {
+      schemaVersion: 1,
+      id: idRaw,
+      name,
+      createdAt: typeof c.createdAt === 'number' ? c.createdAt : now,
+      updatedAt: now,
+      snapshotDataUrl: typeof c.snapshotDataUrl === 'string' ? c.snapshotDataUrl : undefined,
+      payload: {
+        canvasSize: {
+          width: Math.max(200, Math.round(Number(canvasSizeRaw.width) || 800)),
+          height: Math.max(200, Math.round(Number(canvasSizeRaw.height) || 800)),
+        },
+        zones: zonesRaw as SmartLayoutTemplateV1['payload']['zones'],
+        settings: settingsRaw as unknown as SmartLayoutTemplateV1['payload']['settings'],
+        generationContextSnapshot: payload.generationContextSnapshot as SmartLayoutTemplateV1['payload']['generationContextSnapshot'],
+      },
+    };
+    existingIds.add(idRaw);
+    imported.push(template);
+  }
+
+  const next = [...imported, ...existing]
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+    .slice(0, 50);
+  const persisted = saveSmartLayoutTemplates(next);
+  return {
+    imported: imported.length,
+    importedTemplates: imported,
+    next: persisted?.saved ?? [],
+    strippedSnapshots: persisted?.strippedSnapshots ?? false,
+    persisted: persisted?.ok ?? false,
+  };
+}
+
 export function ensureDefaultSmartLayoutTemplatesImported(input: { raw: string; sourceId: string }) {
   if (typeof window === 'undefined') return { imported: 0, persisted: false, already: true };
   try {
@@ -193,8 +255,8 @@ export function ensureDefaultSmartLayoutTemplatesImported(input: { raw: string; 
   } catch {
     return { imported: 0, persisted: false, already: false };
   }
-  const result = importSmartLayoutTemplatesFromJson(input.raw);
-  if (result.persisted && result.imported > 0) {
+  const result = importDefaultSmartLayoutTemplatesFromJson(input.raw);
+  if (result.persisted && loadSmartLayoutTemplates().length > 0) {
     try {
       window.localStorage.setItem(DEFAULT_TEMPLATES_IMPORTED_KEY, input.sourceId);
     } catch {
@@ -214,4 +276,3 @@ export function downloadJsonFile(filename: string, data: unknown) {
   a.click();
   URL.revokeObjectURL(url);
 }
-

@@ -2,11 +2,14 @@ import React, { useMemo, useState } from 'react';
 import type { LayoutZone, SmartLayoutSettings } from '@/types/smartLayout';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
+import { optimizeSmartLayoutZonePrompts } from '@/lib/bigmodel';
 
 interface LayoutDescriptionPanelProps {
   zones: LayoutZone[];
   settings: SmartLayoutSettings;
   className?: string;
+  onUpdateZonePrompts?: (updates: Array<{ id: string; prompt: string }>) => void;
 }
 
 function formatRegionLine(z: LayoutZone) {
@@ -38,12 +41,19 @@ function buildDepthTree(zones: LayoutZone[]) {
     .join('\n');
 }
 
-export const LayoutDescriptionPanel: React.FC<LayoutDescriptionPanelProps> = ({ zones, settings, className }) => {
+export const LayoutDescriptionPanel: React.FC<LayoutDescriptionPanelProps> = ({
+  zones,
+  settings,
+  className,
+  onUpdateZonePrompts,
+}) => {
   const [copied, setCopied] = useState(false);
+  const [optimizing, setOptimizing] = useState(false);
+  const [undoSnapshot, setUndoSnapshot] = useState<Record<string, string> | null>(null);
 
   const text = useMemo(() => {
     const lines: string[] = [];
-    lines.push(`GLOBAL_PROMPT: (由上层参数条与业务逻辑组装，Step 4 负责生成)`); // 留空指引
+    lines.push(`GLOBAL_PROMPT: (由上层参数条与业务逻辑组装，Step 4 负责生成)`);
     if (settings.enableRegionPrompts) {
       lines.push('');
       lines.push('REGION_PROMPTS:');
@@ -64,23 +74,104 @@ export const LayoutDescriptionPanel: React.FC<LayoutDescriptionPanelProps> = ({ 
       await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // ignore
+    } catch {}
+  };
+
+  const hasChinese = (input: string) => /[\u4e00-\u9fff]/.test(input);
+
+  const detectLanguage = () => {
+    let zh = 0;
+    let en = 0;
+    for (const z of zones) {
+      const p = (z.prompt || '').trim();
+      if (!p) continue;
+      if (hasChinese(p)) zh += 1;
+      else en += 1;
     }
+    return zh >= en ? ('zh' as const) : ('en' as const);
+  };
+
+  const handleOptimize = async () => {
+    if (optimizing) return;
+    const candidates = zones
+      .map((z) => ({ id: z.id, type: z.type, prompt: (z.prompt || '').trim() }))
+      .filter((z) => Boolean(z.prompt));
+    if (candidates.length === 0) {
+      toast.error('没有可优化的提示词（请先在区域里填写提示词）');
+      return;
+    }
+    if (!onUpdateZonePrompts) {
+      toast.error('当前页面无法应用优化结果');
+      return;
+    }
+    setOptimizing(true);
+    try {
+      const snapshot: Record<string, string> = {};
+      for (const z of zones) snapshot[z.id] = (z.prompt || '').toString();
+      setUndoSnapshot(snapshot);
+      const updates = await optimizeSmartLayoutZonePrompts({
+        zones: candidates,
+        language: detectLanguage(),
+      });
+      if (updates.length === 0) {
+        toast.error('未生成可用的优化结果');
+        return;
+      }
+      onUpdateZonePrompts(updates);
+      toast.success(`已优化 ${updates.length} 条提示词`);
+    } catch (e: any) {
+      const message = e instanceof Error ? e.message : '优化失败';
+      toast.error(`优化失败: ${message}`);
+    } finally {
+      setOptimizing(false);
+    }
+  };
+
+  const handleUndo = () => {
+    if (!undoSnapshot || !onUpdateZonePrompts) return;
+    const updates = zones
+      .map((z) => ({ id: z.id, prompt: undoSnapshot[z.id] ?? (z.prompt || '').toString() }))
+      .filter((u) => typeof u.prompt === 'string');
+    onUpdateZonePrompts(updates);
+    setUndoSnapshot(null);
+    toast.success('已撤销本次优化');
   };
 
   return (
     <div className={["rounded-xl border border-white/10 bg-[#14141a]", className].filter(Boolean).join(' ')}>
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
         <span className="text-sm text-white/80">布局描述（给模型看的）</span>
-        <Button
-          variant="outline"
-          size="sm"
-          className="border-white/10 text-white/70 hover:text-white hover:bg-white/10"
-          onClick={handleCopy}
-        >
-          {copied ? '已复制' : '复制内容'}
-        </Button>
+        <div className="flex items-center gap-2">
+          {undoSnapshot ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-white/10 text-white/70 hover:text-white hover:bg-white/10 disabled:opacity-50"
+              onClick={handleUndo}
+              disabled={optimizing}
+            >
+              撤销
+            </Button>
+          ) : null}
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-white/10 text-white/70 hover:text-white hover:bg-white/10 disabled:opacity-50"
+            onClick={handleOptimize}
+            disabled={optimizing}
+          >
+            {optimizing ? '优化中...' : '优化提示词'}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-white/10 text-white/70 hover:text-white hover:bg-white/10 disabled:opacity-50"
+            onClick={handleCopy}
+            disabled={optimizing}
+          >
+            {copied ? '已复制' : '复制内容'}
+          </Button>
+        </div>
       </div>
       <Accordion type="single" collapsible defaultValue="desc">
         <AccordionItem value="desc" className="border-b-0">

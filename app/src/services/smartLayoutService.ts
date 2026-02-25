@@ -7,6 +7,8 @@ import type {
   LayoutZone,
 } from '@/types/smartLayout';
 import { calculateOptimalSize } from '@/lib/utils';
+import type { GenerationContext as StoreGenerationContext } from '@/store/appStore';
+import { buildPromptWithContext } from '@/lib/generationContext';
 
 function parseSize(sizeStr?: string) {
   if (!sizeStr) return null;
@@ -95,42 +97,58 @@ function buildDepthTree(zones: LayoutZone[]): DepthTreeNode[] {
   }));
 }
 
+function toStoreContext(context?: GenerationContext): StoreGenerationContext {
+  return {
+    platformId: ((context?.platformId ?? context?.platform ?? 'amazon') as string).trim() || 'amazon',
+    language: context?.language === 'zh' ? 'zh' : 'en',
+    model: (context?.model ?? '').trim(),
+    imageCount: 1,
+    ratioMode: '智能比例',
+    qualityMode: '2K',
+    stylePreset: context?.stylePreset,
+    scene: context?.scene,
+  };
+}
+
 function buildGlobalPrompt(context?: GenerationContext) {
-  const scene = context?.scene ?? 'single';
-  const base =
-    scene === 'detail'
-      ? 'Commercial product detail image. Clean composition with adequate negative space for potential copy.'
-      : scene === 'brand'
-        ? 'Brand key visual. Consistent lighting, premium studio look, cohesive palette.'
-        : scene === 'crossborder'
-          ? 'Cross-border e-commerce product photo. Clear subject, professional studio lighting.'
-          : 'Single product hero shot. Professional studio lighting, sharp focus.';
-
-  const platformId = context?.platformId ?? context?.platform;
-  const platform =
-    platformId === 'amazon'
-      ? 'Amazon compliant. Pure white background, product centered, realistic shadows, no extra text.'
-      : platformId
-        ? `Platform: ${platformId}.`
-        : '';
-
-  const style = context?.stylePreset ? `Style: ${context.stylePreset}.` : '';
-  const language = context?.language === 'en' ? 'Write all descriptions in English.' : '';
-
-  return [base, platform, style, language].filter(Boolean).join(' ');
+  const storeContext = toStoreContext(context);
+  const allowText = Boolean(context?.allowText);
+  return buildPromptWithContext({
+    basePrompt: '',
+    context: storeContext,
+    allowText,
+    includeSceneHint: true,
+    includePlatformHint: true,
+    includeStyleHint: true,
+    includeLanguageHint: true,
+    includeAllowTextHint: true,
+  });
 }
 
 function buildRegionSuffix(context?: GenerationContext) {
-  const language = context?.language === 'en' ? 'Write in English.' : '';
-  const platform = (context?.platformId ?? context?.platform) === 'amazon' ? 'Amazon compliant.' : '';
-  const style = context?.stylePreset ? `Style: ${context.stylePreset}.` : '';
-  return [language, platform, style].filter(Boolean).join(' ');
+  const storeContext = toStoreContext(context);
+  return buildPromptWithContext({
+    basePrompt: '',
+    context: storeContext,
+    allowText: false,
+    includeSceneHint: false,
+    includePlatformHint: false,
+    includeStyleHint: true,
+    includeLanguageHint: true,
+    includeAllowTextHint: false,
+  });
 }
 
 function mergeRegionPrompt(zone: LayoutZone, context?: GenerationContext) {
   const parts = [zone.prompt?.trim(), zone.autoCaption?.trim()].filter(Boolean) as string[];
   let merged = parts.join(', ');
-  if (!merged) merged = zone.type === 'background' ? 'background' : zone.type === 'prop' ? 'prop' : 'main subject';
+  if (!merged) {
+    if (context?.language === 'zh') {
+      merged = zone.type === 'background' ? '背景' : zone.type === 'prop' ? '道具' : '主体';
+    } else {
+      merged = zone.type === 'background' ? 'background' : zone.type === 'prop' ? 'prop' : 'main subject';
+    }
+  }
   const suffix = buildRegionSuffix(context);
   return suffix ? `${merged}. ${suffix}` : merged;
 }
@@ -193,12 +211,13 @@ function buildCoordinateSystemLines(canvasW: number, canvasH: number) {
   ];
 }
 
-function buildChecklistLines() {
-  return [
-    'Checklist: verify each region object stays inside its bbox.',
-    'Checklist: verify occlusion matches DEPTH_TREE (overlap => cover).',
-    'Checklist: verify no borders/boxes/numbers/labels/text are drawn.',
-  ];
+function buildChecklistLines(params: { allowText: boolean; enableDepthTree: boolean }) {
+  const lines = ['Checklist: verify each region object stays inside its bbox.'];
+  if (params.enableDepthTree) {
+    lines.push('Checklist: verify occlusion matches DEPTH_TREE (overlap => cover).');
+  }
+  lines.push(params.allowText ? 'Checklist: verify no borders/boxes/numbers/labels are drawn.' : 'Checklist: verify no borders/boxes/numbers/labels/text are drawn.');
+  return lines;
 }
 
 export async function generateLayoutSketch(
@@ -298,12 +317,13 @@ export function composeLayoutPrompt(zones: LayoutZone[], context?: GenerationCon
   const depthTree = buildDepthTree(zones)
     .map(n => `Node ${idToRegionNo.get(n.id) ?? n.regionNo} zIndex=${n.zIndex} overlaps=[${n.overlaps.map(id => idToRegionNo.get(id)).filter(Boolean).join(',')}]`);
 
+  const allowText = Boolean(context?.allowText);
   const rules = [
     'Follow COORDINATE_SYSTEM strictly for all placements.',
-    'Do not draw borders, boxes, numbers, labels, or any text.',
+    allowText ? 'Do not draw borders, boxes, numbers, or labels.' : 'Do not draw borders, boxes, numbers, labels, or any text.',
     'All objects must stay strictly inside their assigned regions.',
     'Respect occlusion and depth order; no floating objects.',
-    ...buildChecklistLines(),
+    ...buildChecklistLines({ allowText, enableDepthTree: true }),
   ];
 
   return [
@@ -381,6 +401,9 @@ export async function composeLayoutForGeneration(
 
   const canvasW = request.canvasSize.width;
   const canvasH = request.canvasSize.height;
+  const allowText = Boolean(request.context?.allowText);
+  const enableRegionPrompts = request.promptSettings?.enableRegionPrompts !== false;
+  const enableDepthTree = request.promptSettings?.enableDepthTree !== false;
   const globalPrompt = buildGlobalPrompt(request.context);
   const coordinateLines = buildCoordinateSystemLines(canvasW, canvasH);
   const regionPrompts: RegionPrompt[] = regionOrder
@@ -449,13 +472,6 @@ export async function composeLayoutForGeneration(
 
     return `Region ${r.regionNo} [Plane: ${getPlaneEn(r.type)} | Location: ${r.locationHint} | BBox: (x=${r.bbox.x}px,y=${r.bbox.y}px,w=${r.bbox.w}px,h=${r.bbox.h}px) | AnchorPx: (ax=${anchor.ax}px,ay=${anchor.ay}px) | Padding: >=${padding}px | Margins: (l=${margins.l}px,t=${margins.t}px,r=${margins.r}px,b=${margins.b}px) | Depth: zIndex=${r.zIndex} | 图1中${colorZh}${getTypeZh(r.type)}区域 | ${refText} | color=${sketchColor}] Prompt: ${r.prompt}。${alignRules}`;
   });
-  const rules = [
-    'Follow COORDINATE_SYSTEM strictly for all placements.',
-    'Do not draw borders, boxes, numbers, labels, or any text.',
-    'All objects must stay strictly inside their assigned regions.',
-    'Respect occlusion and depth order; no floating objects.',
-    ...buildChecklistLines(),
-  ];
 
   const combinedPrompt = [
     'GLOBAL_PROMPT:',
@@ -466,16 +482,17 @@ export async function composeLayoutForGeneration(
     '',
     'COORDINATE_SYSTEM:',
     ...coordinateLines,
-    '',
-    'REGION_PROMPTS:',
-    ...regionLines,
-    '',
-    'DEPTH_TREE:',
-    'Rule: If Node A overlaps Node B, A must visually cover B where they intersect.',
-    ...depthLines,
+    ...(enableRegionPrompts ? ['', 'REGION_PROMPTS:', ...regionLines] : []),
+    ...(enableDepthTree ? ['', 'DEPTH_TREE:', 'Rule: If Node A overlaps Node B, A must visually cover B where they intersect.', ...depthLines] : []),
     '',
     'RULES:',
-    ...rules,
+    ...[
+      'Follow COORDINATE_SYSTEM strictly for all placements.',
+      allowText ? 'Do not draw borders, boxes, numbers, or labels.' : 'Do not draw borders, boxes, numbers, labels, or any text.',
+      'All objects must stay strictly inside their assigned regions.',
+      ...(enableDepthTree ? ['Respect occlusion and depth order; no floating objects.'] : ['No floating objects.']),
+      ...buildChecklistLines({ allowText, enableDepthTree }),
+    ],
   ].join('\n').trim();
 
   const generateParams: LayoutCompositionResult['generateParams'] = {

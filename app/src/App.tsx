@@ -17,7 +17,7 @@ import { ensureDefaultSmartLayoutTemplatesImported } from '@/lib/smartLayoutPers
 
 ensureDefaultSmartLayoutTemplatesImported({
   raw: defaultSmartLayoutTemplatesRaw,
-  sourceId: 'smart-layout-templates-1770704133755.json',
+  sourceId: 'smart-layout-templates-1770704133755.json@v3',
 });
 
 function App() {

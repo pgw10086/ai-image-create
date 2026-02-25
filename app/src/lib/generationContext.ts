@@ -124,7 +124,7 @@ export const STYLE_PRESETS: Array<{ id: string; label: string; promptZh: string;
   },
 ];
 
-function sceneHint(scene?: string, language?: GenerationContext['language']) {
+export function sceneHint(scene?: string, language?: GenerationContext['language']) {
   if (language === 'zh') {
     if (scene === 'detail') return '商品详情图风格，构图干净，保留适度留白以便后续加文案。';
     if (scene === 'crossborder') return '跨境电商商品图风格，主体清晰，棚拍质感，灯光专业。';
@@ -138,7 +138,7 @@ function sceneHint(scene?: string, language?: GenerationContext['language']) {
   return 'Single product hero shot. Professional studio lighting, sharp focus.';
 }
 
-function platformHint(platformId?: string, language?: GenerationContext['language']) {
+export function platformHint(platformId?: string, language?: GenerationContext['language']) {
   if (!platformId) return '';
   const pid = (platformId ?? '').trim().toLowerCase();
 
@@ -162,23 +162,38 @@ function platformHint(platformId?: string, language?: GenerationContext['languag
     return `平台：${platformId}。`;
   }
 
-  if (pid === 'amazon') return 'Amazon compliant. Pure white background, product centered, realistic shadows, no extra text.';
+  if (pid === 'amazon')
+    return 'Amazon compliant main image: pure white background (RGB 255,255,255), centered product (>=85% of frame), realistic shadow. No text, watermark, logo, border, or extra accessories.';
+  if (pid === 'temu')
+    return 'Temu compliant: 1:1 square, clean white/clean background. No Chinese characters, no promo stickers, no borders, no large text blocks. Keep colors realistic.';
+  if (pid === 'tiktok')
+    return 'TikTok Shop style: mobile-first composition. Main image recommended 1:1 with clean background; marketing/detail images can use 3:4 or 9:16. Natural, authentic look.';
+  if (pid === 'shopee')
+    return 'Shopee style: clear subject, recommended white/clean background. Keep layout clean; avoid obvious watermarks and large overlays.';
+  if (pid === 'lazada')
+    return 'Lazada style: clear subject, recommended white/clean background. Simple composition; avoid borders, watermarks, and large text overlays.';
+  if (pid === 'aliexpress')
+    return 'AliExpress style: recommended white/clean background, clear subject. Reduce heavy text overlays and flashy decorations. Avoid watermarks and borders.';
+  if (pid === 'ebay')
+    return 'eBay compliant: no text, borders, logos, or watermarks. Clean background, clear realistic product. No placeholder images.';
+  if (pid === 'shein')
+    return 'SHEIN style: high-resolution, consistent aesthetics. Clean background (white/light gray/clean scene). For apparel, avoid showing faces; avoid watermarks and non-brand logos.';
   return `Platform: ${platformId}.`;
 }
 
-function languageHint(language?: GenerationContext['language']) {
+export function languageHint(language?: GenerationContext['language']) {
   if (language === 'en') return 'Use English descriptions.';
   if (language === 'zh') return '使用中文描述。';
   return '';
 }
 
-function allowTextHint(allowText: boolean, language?: GenerationContext['language']) {
+export function allowTextHint(allowText: boolean, language?: GenerationContext['language']) {
   if (!allowText) return '';
   if (language === 'zh') return '包含清晰可读的中文文案，字形规范，避免乱码。';
   return 'Include clear readable English copy text; avoid garbled letters.';
 }
 
-function styleHint(stylePreset?: string, language?: GenerationContext['language']) {
+export function styleHint(stylePreset?: string, language?: GenerationContext['language']) {
   const raw = (stylePreset ?? '').trim();
   if (!raw) return '';
   const matched = STYLE_PRESETS.find((s) => s.label === raw || s.id === raw);

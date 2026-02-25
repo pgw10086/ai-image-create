@@ -35,6 +35,7 @@ import { Wand2, RotateCcw, Eye, Maximize2, Minimize2, PanelRightClose, PanelRigh
 import { toast } from 'sonner';
 import { enrichZonesForPrompt } from '@/lib/smartLayoutUtils';
 import { useAppStore } from '@/store/appStore';
+import { getPlatformStandardById } from '@/constants/platformStandards';
 import {
   createSmartLayoutTemplateExportPayload,
   deleteSmartLayoutTemplate,
@@ -50,7 +51,7 @@ import type { SmartLayoutTemplateV1 } from '@/types/smartLayout';
 
 export function SmartLayoutView({ className }: { className?: string }) {
   const canvasRef = useRef<SmartCanvasHandle>(null);
-  const { smartLayoutFocusMode, setSmartLayoutFocusMode, generationContext, updateGenerationContext, smartLayoutAssets, addSmartLayoutAsset, clearSmartLayoutAssets } = useAppStore();
+  const { smartLayoutFocusMode, setSmartLayoutFocusMode, generationContext, updateGenerationContext, smartLayoutAssets, addSmartLayoutAsset, clearSmartLayoutAssets, activeTags } = useAppStore();
   const [zones, setZones] = useState<LayoutZone[]>([]);
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [drawMode, setDrawMode] = useState(() => {
@@ -243,6 +244,18 @@ export function SmartLayoutView({ className }: { className?: string }) {
 
   const normalizedZones = useMemo(() => applyZoneEnrichment(zones), [zones, canvasSize.width, canvasSize.height]);
 
+  const handleUpdateZonePrompts = (updates: Array<{ id: string; prompt: string }>) => {
+    const byId = new Map(updates.map((u) => [u.id, u.prompt]));
+    setZones((prev) =>
+      applyZoneEnrichment(
+        prev.map((z) => {
+          if (!byId.has(z.id)) return z;
+          return { ...z, prompt: byId.get(z.id) || '' };
+        })
+      )
+    );
+  };
+
   useEffect(() => {
     setZones(prev => applyZoneEnrichment(prev));
   }, [canvasSize.width, canvasSize.height]);
@@ -268,7 +281,18 @@ export function SmartLayoutView({ className }: { className?: string }) {
       }
       const normalizePlatformId = (v: string | undefined) => {
         if (!v) return undefined;
-        if (v === 'amazon' || v === 'temu' || v === 'shopee' || v === 'tiktok' || v === 'aliexpress' || v === 'alibaba') return v;
+        if (
+          v === 'amazon' ||
+          v === 'temu' ||
+          v === 'shopee' ||
+          v === 'tiktok' ||
+          v === 'aliexpress' ||
+          v === 'alibaba' ||
+          v === 'lazada' ||
+          v === 'ebay' ||
+          v === 'shein'
+        )
+          return v;
         return undefined;
       };
       const normalizeScene = (v: string | undefined) => {
@@ -278,6 +302,8 @@ export function SmartLayoutView({ className }: { className?: string }) {
       };
       const platformIdNormalized = normalizePlatformId(generationContext.platformId);
       const sceneNormalized = normalizeScene(generationContext.scene);
+      const std = platformIdNormalized ? getPlatformStandardById(platformIdNormalized) : undefined;
+      const allowText = activeTags.includes('text') && !std?.disallowTextInImage;
       const ratioModeRaw = (generationContext.ratioMode ?? '').trim();
       const ratioMode = ratioModeRaw === '智能比例' || ratioModeRaw.includes(':') ? ratioModeRaw : '智能比例';
       const qualityMode = generationContext.qualityMode === '4K' ? '4K' : '2K';
@@ -304,6 +330,10 @@ export function SmartLayoutView({ className }: { className?: string }) {
         canvasSize,
         renderMode: settings.layoutSketchRenderMode,
         assets: smartLayoutAssets,
+        promptSettings: {
+          enableRegionPrompts: settings.enableRegionPrompts,
+          enableDepthTree: settings.enableDepthTree,
+        },
         context: {
           scene: sceneNormalized,
           platformId: platformIdNormalized,
@@ -313,6 +343,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
           ratioMode: fixed ? 'fixed' : 'smart',
           size: requestSize,
           stylePreset: generationContext.stylePreset,
+          allowText,
         },
       }, sketchSize);
 
@@ -943,7 +974,12 @@ export function SmartLayoutView({ className }: { className?: string }) {
               </TabsContent>
 
               <TabsContent value="desc" className="h-[calc(100%-56px)] mt-2 px-3 pb-3 overflow-auto">
-                <LayoutDescriptionPanel zones={normalizedZones} settings={settings} className="border-0 bg-transparent" />
+                <LayoutDescriptionPanel
+                  zones={normalizedZones}
+                  settings={settings}
+                  className="border-0 bg-transparent"
+                  onUpdateZonePrompts={handleUpdateZonePrompts}
+                />
               </TabsContent>
             </Tabs>
           ) : (
