@@ -16,6 +16,7 @@ interface PreviewDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
+  onStop: () => void;
   onGenerateVariants: (styles: string[]) => void;
   previewImageSrc: string;
   finalImageSrc: string;
@@ -31,6 +32,7 @@ export function PreviewDialog({
   open,
   onOpenChange,
   onConfirm,
+  onStop,
   onGenerateVariants,
   previewImageSrc,
   finalImageSrc,
@@ -209,6 +211,11 @@ export function PreviewDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isGenerating}>
             取消
           </Button>
+          {isGenerating ? (
+            <Button variant="outline" onClick={onStop}>
+              停止
+            </Button>
+          ) : null}
           <Button onClick={onConfirm} disabled={isGenerating}>
             {isGenerating ? '生成中...' : '确认生成'}
           </Button>

@@ -11,12 +11,14 @@ import { generateImage } from '@/lib/api';
 import {
   hasGeminiApiKeyConfigured,
   isTaihaoProModel,
+  computeGroupGeneration,
   resolveModelId,
   resolveSizeFromCanvasForModel,
   resolveSizeFromRatioMode,
 } from '@/lib/generationContext';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -31,7 +33,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Wand2, RotateCcw, Eye, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, SlidersHorizontal, Info, Save, FolderOpen, Upload, Download, Trash2 } from 'lucide-react';
+import { Wand2, RotateCcw, Eye, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, SlidersHorizontal, Info, Save, FolderOpen, Upload, Download, Trash2, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { enrichZonesForPrompt } from '@/lib/smartLayoutUtils';
 import { useAppStore } from '@/store/appStore';
@@ -48,6 +50,12 @@ import {
   upsertSmartLayoutTemplate,
 } from '@/lib/smartLayoutPersistence';
 import type { SmartLayoutTemplateV1 } from '@/types/smartLayout';
+
+type ResultSlot = {
+  status: 'pending' | 'processing' | 'success' | 'failed' | 'cancelled';
+  url?: string;
+  error?: string;
+};
 
 export function SmartLayoutView({ className }: { className?: string }) {
   const canvasRef = useRef<SmartCanvasHandle>(null);
@@ -118,10 +126,13 @@ export function SmartLayoutView({ className }: { className?: string }) {
   });
   const [isFinalPromptEdited, setIsFinalPromptEdited] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [resultImage, setResultImage] = useState<string | null>(null);
+  const [resultSlots, setResultSlots] = useState<ResultSlot[]>([]);
+  const [requestedImageCount, setRequestedImageCount] = useState(1);
+  const [selectedResultIndex, setSelectedResultIndex] = useState(0);
   const [resultOpen, setResultOpen] = useState(false);
   const [variantResults, setVariantResults] = useState<Array<{ style: string; url: string }>>([]);
   const [variantOpen, setVariantOpen] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
@@ -387,6 +398,16 @@ export function SmartLayoutView({ className }: { className?: string }) {
     await confirmGenerate(previewData);
   };
 
+  const cancelGeneration = () => {
+    abortControllerRef.current?.abort();
+    setResultSlots((prev) =>
+      prev.map((slot) => {
+        if (slot.status === 'success' || slot.status === 'failed') return slot;
+        return { ...slot, status: 'cancelled', error: slot.error || '已停止' };
+      })
+    );
+  };
+
   const GLOBAL_BLOCK_RE =
     /^GLOBAL_PROMPT:\s*[\s\S]*?(?=\n\nIMAGE_REFERENCES:|\nIMAGE_REFERENCES:|\n\nCOORDINATE_SYSTEM:|\nCOORDINATE_SYSTEM:|\n\nREGION_PROMPTS:|\nREGION_PROMPTS:|$)/m;
 
@@ -439,38 +460,146 @@ export function SmartLayoutView({ className }: { className?: string }) {
   const confirmGenerate = async (data: { previewSketch: string; generationSketch: string; referenceImages: string[]; globalPrompt: string; finalPrompt: string; size: string; model: string; sizeHint?: string }) => {
     setIsGenerating(true);
     try {
+      abortControllerRef.current?.abort();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
       const prompt = data.sizeHint ? `${data.finalPrompt}\n\nOUTPUT_SIZE_HINT:\n${data.sizeHint}` : data.finalPrompt;
       const size = data.model.includes('seededit-3.0-i2i') ? undefined : data.size;
-      const response = await generateImage({
-        prompt,
-        image: [data.generationSketch, ...data.referenceImages],
-        size,
-        model: data.model,
-        sequential_image_generation: 'disabled',
-        stream: false,
+      const requestedCount = Math.max(1, Math.min(15, Math.floor(generationContext.imageCount || 1)));
+      const referenceCount = 1 + (data.referenceImages?.length || 0);
+      const group = computeGroupGeneration({
+        requestedCount,
+        referenceCount,
+        modelId: data.model,
       });
+      const image = [data.generationSketch, ...data.referenceImages];
+      const concurrencyLimit = 3;
 
-      if (response.data && response.data.length > 0) {
-        setResultImage(response.data[0].url ?? null);
-        setResultOpen(true);
-        setPreviewOpen(false);
-        if (response.code === 'mock') {
-          toast.message(response.message || '当前为演示模式（Mock），未请求真实接口');
+      setRequestedImageCount(requestedCount);
+      setSelectedResultIndex(0);
+      setResultSlots(Array.from({ length: requestedCount }, () => ({ status: 'pending' })));
+      setResultOpen(true);
+      setPreviewOpen(false);
+
+      const updateSlot = (index: number, patch: Partial<ResultSlot>) => {
+        setResultSlots((prev) => prev.map((slot, idx) => (idx === index ? { ...slot, ...patch } : slot)));
+      };
+
+      if (requestedCount > 1 && group.sequential_image_generation !== 'auto') {
+        toast.message('当前模型不支持一次生成多张，将自动分次生成以补齐张数');
+      } else if (requestedCount > 1 && group.maxImages < requestedCount) {
+        toast.message(`由于参考图数量限制，本次最多可组图生成 ${group.maxImages} 张，将自动补齐到 ${requestedCount} 张`);
+      }
+
+      const urls: string[] = [];
+      const pushUrl = (slotIndex: number, url?: string) => {
+        if (!url) return;
+        urls.push(url);
+        updateSlot(slotIndex, { status: 'success', url, error: undefined });
+      };
+
+      let filled = 0;
+
+      if (group.sequential_image_generation === 'auto' && !controller.signal.aborted) {
+        try {
+          const response = await generateImage({
+            prompt,
+            image,
+            size,
+            model: data.model,
+            sequential_image_generation: 'auto',
+            sequential_image_generation_options: { max_images: group.maxImages },
+            stream: false,
+            signal: controller.signal,
+          });
+          const nextUrls = response.data?.map((item) => item.url).filter((v): v is string => Boolean(v)) ?? [];
+          if (response.code === 'mock') {
+            toast.message(response.message || '当前为演示模式（Mock），未请求真实接口');
+          }
+          for (const u of nextUrls) {
+            if (filled >= requestedCount) break;
+            pushUrl(filled, u);
+            filled += 1;
+          }
+        } catch (error: unknown) {
+          if (controller.signal.aborted) {
+            toast.message('已取消生成');
+          } else {
+            const message = error instanceof Error ? error.message : '未知错误';
+            toast.error(`组图生成失败：${message}`);
+          }
         }
-        toast.success('生成成功！');
+      }
+
+      const slotIndices = Array.from({ length: requestedCount - filled }, (_, i) => i + filled);
+      let cursor = 0;
+      const workers = Array.from({ length: Math.min(concurrencyLimit, slotIndices.length) }, async () => {
+        while (!controller.signal.aborted) {
+          const next = cursor;
+          cursor += 1;
+          if (next >= slotIndices.length) return;
+          const slotIndex = slotIndices[next];
+          updateSlot(slotIndex, { status: 'processing', error: undefined });
+          try {
+            const response = await generateImage({
+              prompt,
+              image,
+              size,
+              model: data.model,
+              sequential_image_generation: 'disabled',
+              stream: false,
+              signal: controller.signal,
+            });
+            if (response.code === 'mock') {
+              toast.message(response.message || '当前为演示模式（Mock），未请求真实接口');
+            }
+            const url = response.data?.[0]?.url;
+            if (url) {
+              pushUrl(slotIndex, url);
+            } else {
+              updateSlot(slotIndex, { status: 'failed', error: response.message || '生成失败' });
+            }
+          } catch (error: unknown) {
+            if (controller.signal.aborted) {
+              updateSlot(slotIndex, { status: 'cancelled', error: '已停止' });
+              return;
+            }
+            const message = error instanceof Error ? error.message : '未知错误';
+            updateSlot(slotIndex, { status: 'failed', error: message });
+            toast.error(`第 ${slotIndex + 1} 张生成失败：${message}`);
+            continue;
+          }
+        }
+      });
+      await Promise.all(workers);
+
+      if (urls.length === 0) {
+        if (controller.signal.aborted) return;
+        throw new Error('未生成到有效图片');
+      }
+
+      if (requestedCount > 1 && urls.length < requestedCount) {
+        toast.message(`已生成 ${urls.length}/${requestedCount} 张`);
       } else {
-        throw new Error(response.message || 'No image data returned');
+        toast.success(`生成成功！${urls.length > 1 ? `（${urls.length} 张）` : ''}`);
       }
     } catch (error: unknown) {
       console.error('Generation failed:', error);
       const message = error instanceof Error ? error.message : '未知错误';
       toast.error(`生成失败: ${message}`);
     } finally {
+      abortControllerRef.current = null;
       setIsGenerating(false);
     }
   };
 
   const rootHeightClass = className && /(^|\s)h-/.test(className) ? '' : 'h-[calc(100dvh-220px)]';
+  const resultSuccessCount = useMemo(() => resultSlots.filter((s) => s.status === 'success').length, [resultSlots]);
+  const selectedResult = useMemo(() => {
+    if (resultSlots.length === 0) return null;
+    const idx = Math.max(0, Math.min(selectedResultIndex, resultSlots.length - 1));
+    return resultSlots[idx] ?? null;
+  }, [resultSlots, selectedResultIndex]);
 
   const refreshTemplates = () => {
     setTemplates(loadSmartLayoutTemplates());
@@ -486,7 +615,9 @@ export function SmartLayoutView({ className }: { className?: string }) {
     }
     setSelectedZoneId(null);
     canvasRef.current?.clearSelection();
-    setResultImage(null);
+    setResultSlots([]);
+    setRequestedImageCount(1);
+    setSelectedResultIndex(0);
     setResultOpen(false);
     toast.success(`已应用模板：${t.name}`);
   };
@@ -522,7 +653,9 @@ export function SmartLayoutView({ className }: { className?: string }) {
     }
     setSelectedZoneId(null);
     canvasRef.current?.clearSelection();
-    setResultImage(null);
+    setResultSlots([]);
+    setRequestedImageCount(1);
+    setSelectedResultIndex(0);
     setResultOpen(false);
     setDraftOfferOpen(false);
     toast.success('已恢复草稿');
@@ -812,7 +945,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {resultImage && (
+          {resultSlots.length > 0 && (
             <Button
               variant="ghost"
               size="sm"
@@ -829,7 +962,9 @@ export function SmartLayoutView({ className }: { className?: string }) {
             size="sm"
             onClick={() => {
               setZones([]);
-              setResultImage(null);
+              setResultSlots([]);
+              setRequestedImageCount(1);
+              setSelectedResultIndex(0);
               setResultOpen(false);
               canvasRef.current?.clearSelection();
               clearSmartLayoutDraft();
@@ -844,17 +979,32 @@ export function SmartLayoutView({ className }: { className?: string }) {
             variant="outline"
             size="sm"
             onClick={handlePreviewClick}
+            disabled={isGenerating}
             className="h-8 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
           >
             预览合成图
           </Button>
+          {isGenerating ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={cancelGeneration}
+              className="h-8 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+            >
+              停止
+            </Button>
+          ) : null}
           <Button
             size="sm"
             onClick={handleGenerateDirect}
-            className="h-8 bg-violet-600 hover:bg-violet-700 text-white shadow-lg shadow-violet-500/20 transition-all hover:scale-105"
+            disabled={isGenerating}
+            className={[
+              'h-8 bg-violet-600 hover:bg-violet-700 text-white shadow-lg shadow-violet-500/20 transition-all hover:scale-105',
+              isGenerating ? 'opacity-80 cursor-not-allowed' : '',
+            ].join(' ')}
           >
-            <Wand2 className="mr-2 h-4 w-4" />
-            立即生成
+            {isGenerating ? <Spinner className="mr-2 h-4 w-4 text-white/80" /> : <Wand2 className="mr-2 h-4 w-4" />}
+            {isGenerating ? '生成中...' : '立即生成'}
           </Button>
 
           <Button
@@ -1018,6 +1168,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
          open={previewOpen}
          onOpenChange={setPreviewOpen}
          onConfirm={handleConfirmGenerate}
+         onStop={cancelGeneration}
          onGenerateVariants={handleGenerateVariants}
          previewImageSrc={previewData.previewSketch}
          finalImageSrc={previewData.generationSketch}
@@ -1047,11 +1198,61 @@ export function SmartLayoutView({ className }: { className?: string }) {
        <Dialog open={resultOpen} onOpenChange={setResultOpen}>
          <DialogContent className="sm:max-w-[900px] bg-[#14141a] border-white/10 text-white">
            <DialogHeader>
-             <DialogTitle>生成结果</DialogTitle>
+             <DialogTitle>
+               <div className="flex items-center gap-2">
+                 <span>生成结果（{resultSuccessCount}/{requestedImageCount}）</span>
+                 {isGenerating ? <Spinner className="size-4 text-white/60" /> : null}
+               </div>
+             </DialogTitle>
            </DialogHeader>
-           {resultImage ? (
-             <div className="w-full flex items-center justify-center">
-               <img src={resultImage} alt="result" className="max-h-[70vh] w-auto object-contain rounded-md border border-white/10" />
+           {resultSlots.length > 0 ? (
+             <div className="w-full">
+               <div className="w-full flex items-center justify-center">
+                 {selectedResult?.status === 'success' && selectedResult.url ? (
+                   <img
+                     src={selectedResult.url}
+                     alt="result"
+                     className="max-h-[60vh] w-auto object-contain rounded-md border border-white/10"
+                   />
+                 ) : (
+                   <div className="h-[320px] w-full rounded-md border border-white/10 bg-white/5 flex flex-col items-center justify-center gap-2 text-white/70">
+                     {selectedResult?.status === 'failed' ? <XCircle className="h-5 w-5 text-rose-300" /> : <Spinner className="size-5 text-white/60" />}
+                     <div className="text-sm">
+                       {selectedResult?.status === 'failed' ? '生成失败' : selectedResult?.status === 'cancelled' ? '已停止' : '生成中...'}
+                     </div>
+                     {selectedResult?.error ? <div className="text-xs text-white/45 max-w-[720px] px-4 text-center break-words">{selectedResult.error}</div> : null}
+                   </div>
+                 )}
+               </div>
+               {resultSlots.length > 1 ? (
+                 <div className="mt-4 grid grid-cols-4 sm:grid-cols-6 gap-2">
+                   {resultSlots.map((slot, idx) => (
+                     <button
+                       key={`${slot.url || slot.status}-${idx}`}
+                       type="button"
+                       onClick={() => {
+                         setSelectedResultIndex(idx);
+                       }}
+                       className={[
+                         'aspect-square rounded-md overflow-hidden border bg-white/5 relative',
+                         idx === selectedResultIndex ? 'border-violet-400/70' : 'border-white/10 hover:border-white/30',
+                       ].join(' ')}
+                     >
+                       <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/50 text-[10px] text-white/70">{idx + 1}</div>
+                       {slot.status === 'success' && slot.url ? (
+                         <img src={slot.url} alt={`result-${idx + 1}`} className="w-full h-full object-cover" />
+                       ) : (
+                         <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-white/60">
+                           {slot.status === 'failed' ? <XCircle className="h-5 w-5 text-rose-300" /> : <Spinner className="size-5 text-white/60" />}
+                           <div className="text-[11px]">
+                             {slot.status === 'failed' ? '失败' : slot.status === 'cancelled' ? '已停止' : '生成中'}
+                           </div>
+                         </div>
+                       )}
+                     </button>
+                   ))}
+                 </div>
+               ) : null}
              </div>
            ) : (
              <div className="text-white/60 text-sm">暂无结果</div>

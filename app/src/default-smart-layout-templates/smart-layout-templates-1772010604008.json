@@ -1,7 +1,326 @@
 {
   "schemaVersion": 1,
-  "exportedAt": 1772011064954,
+  "exportedAt": 1772026931239,
   "templates": [
+    {
+      "schemaVersion": 1,
+      "id": "5f684068-1387-4f8b-8177-bf9471a13ed6",
+      "name": "发圈收纳",
+      "createdAt": 1772026927960,
+      "updatedAt": 1772026927960,
+      "snapshotDataUrl": "data:image/png;base64,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",
+      "payload": {
+        "canvasSize": {
+          "width": 768,
+          "height": 768
+        },
+        "zones": [
+          {
+            "id": "d9f21ca1-f7fe-49f3-ab24-0b90cc985b5f",
+            "x": 11,
+            "y": 9,
+            "width": 717,
+            "height": 329,
+            "zIndex": 1,
+            "type": "main",
+            "semanticColor": "#FCA5A5",
+            "prompt": "发圈收纳后的整洁场景，彩色的发圈整齐地挂在挂杆上，挂杆固定在粉色的墙面上，背景是温馨的卧室角落，有米色的窗帘和带有靠垫的沙发，整体整洁美观，温馨治愈的氛围。左上角有个 after 标识。",
+            "sketchColor": "#F23636",
+            "bboxNormalized": {
+              "x": 0.014322916666666666,
+              "y": 0.01171875,
+              "w": 0.93359375,
+              "h": 0.4283854166666667
+            },
+            "locationHint": "Top-Center",
+            "refImageId": "86185bcb",
+            "autoCaption": "自动描述（Mock）：主体参考图，文件名 fashi.png"
+          },
+          {
+            "id": "6cbfb988-440b-4f92-b475-b1244c5df18a",
+            "x": 13,
+            "y": 348,
+            "width": 716,
+            "height": 357,
+            "zIndex": 2,
+            "type": "prop",
+            "semanticColor": "#86EFAC",
+            "prompt": "发圈收纳前的杂乱场景，大量发圈随意堆积在一起，没有任何整理，显得混乱不堪，整体氛围杂乱无章，黑白色显示，右下角有个 before 的标识。",
+            "sketchColor": "#2CF26E",
+            "bboxNormalized": {
+              "x": 0.016927083333333332,
+              "y": 0.453125,
+              "w": 0.9322916666666666,
+              "h": 0.46484375
+            },
+            "locationHint": "Bottom-Center",
+            "refImageId": "86185bcb"
+          },
+          {
+            "id": "71c509b1-c377-43e7-bed1-915c2b181030",
+            "x": 2,
+            "y": 278,
+            "width": 753,
+            "height": 122,
+            "zIndex": 3,
+            "type": "prop",
+            "semanticColor": "#86EFAC",
+            "prompt": "对比标识设计，圆形的标志中间有 VS 字样和闪电符号，用于分隔收纳前后的对比场景，简洁醒目，横向斜线 30 度分割 before 和 after 图片，黑色和棕色的字体与符号。",
+            "sketchColor": "#0DC99A",
+            "bboxNormalized": {
+              "x": 0.0026041666666666665,
+              "y": 0.3619791666666667,
+              "w": 0.98046875,
+              "h": 0.15885416666666666
+            },
+            "locationHint": "Center-Center"
+          }
+        ],
+        "settings": {
+          "layoutSketchRenderMode": "segmentation",
+          "showSketchPreviewWithImages": true,
+          "enableRegionPrompts": true,
+          "enableDepthTree": true
+        },
+        "generationContextSnapshot": {
+          "platformId": "amazon",
+          "language": "en",
+          "model": "泰豪生图1.0-pro",
+          "imageCount": 1,
+          "ratioMode": "智能比例",
+          "qualityMode": "2K",
+          "stylePreset": "品牌模型",
+          "scene": "crossborder"
+        }
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "270700b8-86a6-47c0-a85c-525353d8400f",
+      "name": "模板 2026/2/25 21:27:46",
+      "createdAt": 1772023456425,
+      "updatedAt": 1772026071948,
+      "snapshotDataUrl": "data:image/png;base64,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",
+      "payload": {
+        "canvasSize": {
+          "width": 768,
+          "height": 1280
+        },
+        "zones": [
+          {
+            "id": "28908f92-6952-4bfb-a1d2-fa958c0341c1",
+            "x": 15,
+            "y": 17,
+            "width": 358,
+            "height": 1250,
+            "zIndex": 1,
+            "type": "main",
+            "semanticColor": "#FCA5A5",
+            "prompt": "挂架的正视图，挂架带有清晰的黑色尺寸标注线和数字，标注总高度 70cm/27.5inch，每层高度 26cm/10inch。",
+            "sketchColor": "#F23636",
+            "bboxNormalized": {
+              "x": 0.01953125,
+              "y": 0.01328125,
+              "w": 0.4661458333333333,
+              "h": 0.9765625
+            },
+            "locationHint": "Center-Left",
+            "refImageId": "a226c524",
+            "coveredZoneIds": []
+          },
+          {
+            "id": "a879d511-e85b-417f-be60-f8de796b2062",
+            "x": 506,
+            "y": 138,
+            "width": 226,
+            "height": 243,
+            "zIndex": 4,
+            "type": "prop",
+            "semanticColor": "#86EFAC",
+            "prompt": "外层粉色圆圈包裹，仿真花特写，下方标注文字 “Lifelike flowers”",
+            "sketchColor": "#4DF22C",
+            "bboxNormalized": {
+              "x": 0.6588541666666666,
+              "y": 0.1078125,
+              "w": 0.2942708333333333,
+              "h": 0.18984375
+            },
+            "locationHint": "Top-Right",
+            "refImageId": "59e73d67",
+            "autoCaption": "自动描述（Mock）：道具参考图，文件名 置物架顶端.png",
+            "coveredZoneIds": [
+              "28908f92-6952-4bfb-a1d2-fa958c0341c1",
+              "6c7b53ec-fea2-49d1-90d4-5b2faac6b456",
+              "1f4174ac-5000-41c2-af96-e996e56ca05e"
+            ]
+          },
+          {
+            "id": "e5ebb068-783e-4c6f-bfb1-5dcd5b30fb6f",
+            "x": 414,
+            "y": 25,
+            "width": 316,
+            "height": 87,
+            "zIndex": 5,
+            "type": "prop",
+            "semanticColor": "#86EFAC",
+            "prompt": "艺术字标题“Product Details”，棕色",
+            "sketchColor": "#0DAAC9",
+            "bboxNormalized": {
+              "x": 0.5390625,
+              "y": 0.01953125,
+              "w": 0.4114583333333333,
+              "h": 0.06796875
+            },
+            "locationHint": "Top-Right",
+            "coveredZoneIds": [
+              "28908f92-6952-4bfb-a1d2-fa958c0341c1",
+              "6c7b53ec-fea2-49d1-90d4-5b2faac6b456",
+              "1f4174ac-5000-41c2-af96-e996e56ca05e",
+              "a879d511-e85b-417f-be60-f8de796b2062"
+            ]
+          },
+          {
+            "id": "e14d0ff4-bfb9-414a-bb14-80d55178ec96",
+            "x": 403,
+            "y": 401,
+            "width": 224,
+            "height": 239,
+            "zIndex": 6,
+            "type": "prop",
+            "semanticColor": "#86EFAC",
+            "prompt": "外层粉色圆圈包裹，上方金色物品的特写，下方标注文字 “Shiny golden horns”",
+            "sketchColor": "#9FF22C",
+            "bboxNormalized": {
+              "x": 0.5247395833333334,
+              "y": 0.31328125,
+              "w": 0.2916666666666667,
+              "h": 0.18671875
+            },
+            "locationHint": "Center-Right",
+            "refImageId": "59e73d67",
+            "coveredZoneIds": [
+              "28908f92-6952-4bfb-a1d2-fa958c0341c1",
+              "6c7b53ec-fea2-49d1-90d4-5b2faac6b456",
+              "1f4174ac-5000-41c2-af96-e996e56ca05e",
+              "a879d511-e85b-417f-be60-f8de796b2062",
+              "e5ebb068-783e-4c6f-bfb1-5dcd5b30fb6f"
+            ]
+          },
+          {
+            "id": "a9a93212-0a84-4e6a-89b7-8f6f7670c2c7",
+            "x": 517,
+            "y": 662,
+            "width": 235,
+            "height": 258,
+            "zIndex": 7,
+            "type": "prop",
+            "semanticColor": "#86EFAC",
+            "prompt": "外层粉色圆圈包裹，原木色的实木杆特写，下方标注文字 “Solid wooden stick”",
+            "sketchColor": "#0D5BC9",
+            "bboxNormalized": {
+              "x": 0.6731770833333334,
+              "y": 0.5171875,
+              "w": 0.3059895833333333,
+              "h": 0.2015625
+            },
+            "locationHint": "Center-Right",
+            "refImageId": "5f9bb57f",
+            "autoCaption": "自动描述（Mock）：道具参考图，文件名 空置物架棍子.png",
+            "coveredZoneIds": [
+              "28908f92-6952-4bfb-a1d2-fa958c0341c1",
+              "6c7b53ec-fea2-49d1-90d4-5b2faac6b456",
+              "1f4174ac-5000-41c2-af96-e996e56ca05e",
+              "a879d511-e85b-417f-be60-f8de796b2062",
+              "e5ebb068-783e-4c6f-bfb1-5dcd5b30fb6f",
+              "e14d0ff4-bfb9-414a-bb14-80d55178ec96"
+            ]
+          },
+          {
+            "id": "70fb69fb-398f-447b-b466-dc3984e70467",
+            "x": 401,
+            "y": 941,
+            "width": 255,
+            "height": 264,
+            "zIndex": 8,
+            "type": "prop",
+            "semanticColor": "#86EFAC",
+            "prompt": "外层粉色圆圈包裹，白色的厚织带特写，下方标注文字 “Thick webbing”",
+            "sketchColor": "#F2F22C",
+            "bboxNormalized": {
+              "x": 0.5221354166666666,
+              "y": 0.73515625,
+              "w": 0.33203125,
+              "h": 0.20625
+            },
+            "locationHint": "Bottom-Right",
+            "refImageId": "5f9bb57f",
+            "coveredZoneIds": [
+              "28908f92-6952-4bfb-a1d2-fa958c0341c1",
+              "6c7b53ec-fea2-49d1-90d4-5b2faac6b456",
+              "1f4174ac-5000-41c2-af96-e996e56ca05e",
+              "a879d511-e85b-417f-be60-f8de796b2062",
+              "e5ebb068-783e-4c6f-bfb1-5dcd5b30fb6f",
+              "e14d0ff4-bfb9-414a-bb14-80d55178ec96",
+              "a9a93212-0a84-4e6a-89b7-8f6f7670c2c7"
+            ]
+          },
+          {
+            "id": "16cc5b96-35c2-4dd4-915e-2b366946bbd7",
+            "x": 354,
+            "y": 6,
+            "width": 42,
+            "height": 1262,
+            "zIndex": 0,
+            "type": "prop",
+            "semanticColor": "#86EFAC",
+            "prompt": "一条淡粉色的柔和波浪形曲线从顶部贯穿到底部，优雅地将画面分为左右两部分，左侧白色背景，右侧粉红色背景。",
+            "sketchColor": "#2CF26E",
+            "bboxNormalized": {
+              "x": 0.4609375,
+              "y": 0.0046875,
+              "w": 0.0546875,
+              "h": 0.9859375
+            },
+            "locationHint": "Center-Center"
+          },
+          {
+            "id": "27667514-add5-492b-81b1-c7cfd7ada1dc",
+            "x": 394,
+            "y": 8,
+            "width": 359,
+            "height": 1253,
+            "zIndex": 1,
+            "type": "prop",
+            "semanticColor": "#86EFAC",
+            "prompt": "整体布局：以浅粉色渐变为背景，采用规整对称的网格排列，四个产品细节展示图均匀分布，整体整齐有序，与左侧清新柔和风格保持统一。\n核心元素排列：四个细节图均为圆形，呈 “2×4 矩阵”  左右交错排布（每行一个，交错排布），间距均匀，避免拥挤或松散。\n图文搭配：每个圆形细节图紧邻右侧配有黑色无衬线文字说明，文字与对应圆形图对齐，图文间距一致，既清晰标注材质，又不破坏整体布局的整洁度。\n视觉衔接：圆形细节图大小统一，与背景浅粉色渐变自然融合，文字字号适中，确保图文搭配协调，突出产品材质特点的同时，保持画面整体美感。",
+            "sketchColor": "#0DC99A",
+            "bboxNormalized": {
+              "x": 0.5130208333333334,
+              "y": 0.00625,
+              "w": 0.4674479166666667,
+              "h": 0.97890625
+            },
+            "locationHint": "Center-Right"
+          }
+        ],
+        "settings": {
+          "layoutSketchRenderMode": "segmentation",
+          "showSketchPreviewWithImages": true,
+          "enableRegionPrompts": true,
+          "enableDepthTree": true
+        },
+        "generationContextSnapshot": {
+          "platformId": "amazon",
+          "language": "en",
+          "model": "泰豪生图1.0-pro",
+          "imageCount": 4,
+          "ratioMode": "智能比例",
+          "qualityMode": "2K",
+          "stylePreset": "品牌模型",
+          "scene": "crossborder"
+        }
+      }
+    },
     {
       "schemaVersion": 1,
       "id": "3d94393e-dc1e-474c-b110-e4fa7c09b883",

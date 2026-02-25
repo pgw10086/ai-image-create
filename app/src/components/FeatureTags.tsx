@@ -135,10 +135,11 @@ export function FeatureTags({ variant: _variant = 'default' }: { variant?: 'defa
           }
 
           if (tag.id === 'count') {
-            const disabled = activeTab === 'smart_layout';
-            const label = disabled ? '单图' : `${generationContext.imageCount}张`;
-            const maxAllowed = Math.max(1, 15 - uploadedImages.length);
-            const options = [1, 4, 6, 8, 12, 15];
+            const isSmartLayout = activeTab === 'smart_layout';
+            const currentCount = Math.max(1, Math.floor(generationContext.imageCount || 1));
+            const label = `${currentCount}张`;
+            const maxAllowed = isSmartLayout ? 15 : Math.max(1, 15 - uploadedImages.length);
+            const options = Array.from({ length: 15 }, (_, idx) => idx + 1);
             return (
               <DropdownMenu key={tag.id}>
                 <DropdownMenuTrigger asChild>
@@ -147,18 +148,21 @@ export function FeatureTags({ variant: _variant = 'default' }: { variant?: 'defa
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ delay: 0.4 + index * 0.03 }}
                     onClick={() => {
-                      if (disabled) return;
                       toggleTag(tag.id);
                     }}
-                    whileHover={disabled ? undefined : { scale: 1.02 }}
-                    whileTap={disabled ? undefined : { scale: 0.98 }}
-                    title={disabled ? '智能布局默认单图输出' : uploadedImages.length > 0 ? `参考图 ${uploadedImages.length} 张，最多可生成 ${maxAllowed} 张` : undefined}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    title={
+                      isSmartLayout
+                        ? '智能布局多图：若模型不支持组图将自动分次生成；参考图过多会降低单次组图上限'
+                        : uploadedImages.length > 0
+                          ? `参考图 ${uploadedImages.length} 张，最多可生成 ${maxAllowed} 张`
+                          : undefined
+                    }
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-all duration-200 ${
-                      disabled
-                        ? 'bg-white/5 border border-white/10 text-white/30 cursor-not-allowed'
-                        : (isActive
-                          ? 'bg-violet-600/30 border border-violet-500/50 text-violet-200'
-                          : 'bg-white/5 border border-white/10 text-white/60 hover:bg-white/10 hover:text-white/80')
+                      isActive
+                        ? 'bg-violet-600/30 border border-violet-500/50 text-violet-200'
+                        : 'bg-white/5 border border-white/10 text-white/60 hover:bg-white/10 hover:text-white/80'
                     }`}
                   >
                     {Icon && <Icon className="w-3.5 h-3.5" />}
@@ -168,7 +172,7 @@ export function FeatureTags({ variant: _variant = 'default' }: { variant?: 'defa
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="bg-card border-border min-w-[160px]" align="start">
                   {options.map((n) => {
-                    const disabledOption = disabled || n > maxAllowed;
+                    const disabledOption = n > maxAllowed;
                     return (
                       <DropdownMenuItem
                         key={n}
@@ -180,7 +184,7 @@ export function FeatureTags({ variant: _variant = 'default' }: { variant?: 'defa
                         className="flex items-center justify-between cursor-pointer hover:bg-white/5"
                       >
                         <span className="text-white/80">{n === 1 ? '单图' : `${n}张`}</span>
-                        {n === generationContext.imageCount && <span className="text-violet-300">✓</span>}
+                        {n === currentCount && <span className="text-violet-300">✓</span>}
                       </DropdownMenuItem>
                     );
                   })}
@@ -217,7 +221,7 @@ export function FeatureTags({ variant: _variant = 'default' }: { variant?: 'defa
                       disabled={!isModelAvailable(m.id)}
                       onClick={() => {
                         if (!isModelAvailable(m.id)) return;
-                        const nextImageCount = m.supportsGroupGeneration ? generationContext.imageCount : 1;
+                        const nextImageCount = Math.max(1, Math.floor(generationContext.imageCount || 1));
                         const nextRatioMode = ratioOptions.some((r) => r.id === generationContext.ratioMode)
                           ? generationContext.ratioMode
                           : '智能比例';

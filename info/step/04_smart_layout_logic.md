@@ -12,7 +12,7 @@ export interface GenerationContext {
   platform?: 'amazon' | 'temu' | 'shopee' | 'tiktok' | 'aliexpress' | 'alibaba';
   language?: 'zh' | 'en';
   model?: string;
-  imageCount?: number; // 智能布局默认忽略并固定为 1
+  imageCount?: number; // 智能布局支持多图输出；模型不支持组图时前端分次调用补齐
   ratioMode?: 'smart' | 'fixed';
   stylePreset?: string;
 }
@@ -59,7 +59,8 @@ export interface LayoutCompositionResult {
     image: string[];
     size?: string;
     model?: string;
-    sequential_image_generation: 'disabled';
+    sequential_image_generation?: 'auto' | 'disabled';
+    sequential_image_generation_options?: { max_images?: number };
   };
 }
 ```
@@ -95,12 +96,13 @@ export interface LayoutCompositionResult {
     3.  弹出“预览确认”弹窗（见交互流程补充）。
     4.  确认后，调用 `api.generateImage`（Image-to-Image 模式）。
 
-*   **API 参数要求**：\n    *   `image`: `[layoutSketchBase64, ...referenceImages]`\n    *   `prompt`: `combinedPrompt`\n    *   `sequential_image_generation`: `disabled`（智能布局生成只出单图）\n    *   `stream`: `false`
+*   **API 参数要求**：\n    *   `image`: `[layoutSketchBase64, ...referenceImages]`\n    *   `prompt`: `combinedPrompt`\n    *   `sequential_image_generation`: 支持 `auto`（一次返回多张）或 `disabled`（单张）\n    *   `sequential_image_generation_options.max_images`: 当为 `auto` 时传入\n    *   `stream`: `false`\n    *   **取消**：需要支持 AbortSignal 以便用户在生成中点击“停止”中断请求
+\n*   **分次生成并发（必须）**：当需要用“单次生成”补齐张数时，前端应使用并发限流（例如并发 3）同时发起请求，并维护每张图的独立状态（生成中/成功/失败/已停止），失败不阻塞后续继续尝试。
 
 *   **后端能力分级**：\n    *   **Seedream 默认（当前）**：Region Prompter 仅作为 Prompt 文本约束；空间靠 `layoutSketch`；材质靠 `referenceImages`。\n    *   **可控后端增强（未来可选）**：当后端接入支持 Area Prompting 的生成管线时，直接把 `regionPrompts[]` 作为像素级区域控制输入（Zone A 区域仅受 Prompt A 控制），显著降低串色与串属性。\n
 *   **两阶段降级（可选开关）**：当出现位置漂移/遮挡错误/串色时启用：\n    *   阶段 1：仅用 `layoutSketch + combinedPrompt` 生成“构图正确草稿图”。\n    *   阶段 2：将草稿图作为最强参考图（image[0]），再叠加原始素材图（image[1..]）重绘细节与融合。
 
-*   **与顶部参数条的匹配（必须）**：\n    *   `model`：由顶部“模型版本”映射到具体 model id，并写入最终请求。\n    *   `size`（S1 策略）：\n        *   `ratioMode=智能比例`：根据画布宽高比推导最合适的 `size`（并用于合成草图缩放与最终请求）。\n        *   `ratioMode=固定比例/分辨率`：直接使用用户选择映射出的 `size`（如 16:9 -> 2560x1440；4.0 支持 1K/2K/4K）。\n        *   **模型校验**：不同模型可用 `size` 不同（例如 SeedEdit 3.0-i2i 仅 adaptive），前端需禁用或在请求时自动回退。\n    *   智能布局模式下强制 `sequential_image_generation='disabled'`；顶部“张数”应在 UI 层置灰或提示不生效（见 Step 3）。
+*   **与顶部参数条的匹配（必须）**：\n    *   `model`：由顶部“模型版本”映射到具体 model id，并写入最终请求。\n    *   `size`（S1 策略）：\n        *   `ratioMode=智能比例`：根据画布宽高比推导最合适的 `size`（并用于合成草图缩放与最终请求）。\n        *   `ratioMode=固定比例/分辨率`：直接使用用户选择映射出的 `size`（如 16:9 -> 2560x1440；4.0 支持 1K/2K/4K）。\n        *   **模型校验**：不同模型可用 `size` 不同（例如 SeedEdit 3.0-i2i 仅 adaptive），前端需禁用或在请求时自动回退。\n    *   `imageCount`：智能布局模式下与顶部“张数”一致。\n        *   模型支持组图：优先使用 `auto + max_images`。\n        *   模型不支持组图或参考图限制导致单次不足：前端分次调用单张生成接口补齐到 N（允许中途失败但继续尝试）。
 
 **3.4 结果回填**
 *   监听 API 返回结果。
