@@ -131,7 +131,7 @@ export const SmartCanvas = forwardRef<SmartCanvasHandle, SmartCanvasProps>(({
   }, [selectedZoneId, zones]); // Add zones dependency to re-query if DOM re-renders
 
   return (
-    <div className="relative overflow-auto p-8 bg-transparent flex justify-center items-center min-h-[500px]">
+    <div className="relative z-0 bg-transparent">
       <div 
         ref={containerRef}
         className="relative bg-white shadow-lg"

@@ -880,20 +880,22 @@ export function SmartLayoutView({ className }: { className?: string }) {
       />
 
       <div className="absolute top-14 left-0 right-0 bottom-0 flex overflow-hidden bg-[#0a0a0f]">
-        <div className="flex-1 overflow-auto flex items-center justify-center p-8">
-          <SmartCanvas
-            ref={canvasRef}
-            zones={zones}
-            onChange={(nextZones) => setZones(applyZoneEnrichment(nextZones))}
-            onSelect={(id) => {
-              setSelectedZoneId(id);
-              if (!sidePanelOpen) setSidePanelOpen(true);
-              setSidePanelTab('zone');
-            }}
-            canvasSize={canvasSize}
-            drawMode={drawMode}
-            getRefImageSrc={getRefImageSrc}
-          />
+        <div className="flex-1 min-w-0 min-h-0 overflow-auto p-6">
+          <div className="min-w-max min-h-max flex items-center justify-center p-2">
+            <SmartCanvas
+              ref={canvasRef}
+              zones={zones}
+              onChange={(nextZones) => setZones(applyZoneEnrichment(nextZones))}
+              onSelect={(id) => {
+                setSelectedZoneId(id);
+                if (!sidePanelOpen) setSidePanelOpen(true);
+                setSidePanelTab('zone');
+              }}
+              canvasSize={canvasSize}
+              drawMode={drawMode}
+              getRefImageSrc={getRefImageSrc}
+            />
+          </div>
         </div>
 
         <div
