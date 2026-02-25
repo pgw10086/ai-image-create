@@ -210,8 +210,8 @@ export interface AppState {
   // Input
   inputValue: string;
   setInputValue: (value: string) => void;
-  inputTemplatePreset: 'none' | 'bow-detail';
-  setInputTemplatePreset: (preset: 'none' | 'bow-detail') => void;
+  inputTemplatePreset: 'none' | 'bow-detail' | 'hair-organizer';
+  setInputTemplatePreset: (preset: 'none' | 'bow-detail' | 'hair-organizer') => void;
   
   // Active tags
   activeTags: string[];

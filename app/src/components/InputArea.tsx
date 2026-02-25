@@ -35,7 +35,9 @@ const examplePrompts = [
 
 type TemplateEditor = Editor & ReactEditor & HistoryEditor;
 
-type BowTemplateVariableKey =
+type VariableTemplatePreset = 'bow-detail' | 'hair-organizer';
+
+type TemplateVariableKey =
   | 'productName'
   | 'styleTone'
   | 'lightingStyle'
@@ -43,6 +45,7 @@ type BowTemplateVariableKey =
   | 'topBlockStyle'
   | 'headlineText'
   | 'sceneSetting'
+  | 'rightScene'
   | 'detailOne'
   | 'detailTwo'
   | 'detailThree'
@@ -56,7 +59,7 @@ type BowTemplateVariableKey =
 
 type TemplateVariableElementNode = SlateElement & {
   type: typeof TEMPLATE_VARIABLE_ELEMENT;
-  key: BowTemplateVariableKey;
+  key: TemplateVariableKey;
   label: string;
   value: string;
   defaultValue: string;
@@ -64,14 +67,14 @@ type TemplateVariableElementNode = SlateElement & {
   children: { text: string }[];
 };
 
-type BowTemplateVariableDef = {
-  key: BowTemplateVariableKey;
+type TemplateVariableDef = {
+  key: TemplateVariableKey;
   label: string;
   defaultValue: string;
   placeholder: string;
 };
 
-const BOW_TEMPLATE_VARIABLES: BowTemplateVariableDef[] = [
+const BOW_TEMPLATE_VARIABLES: TemplateVariableDef[] = [
   { key: 'productName', label: '产品描述', defaultValue: '粉蓝配色蝴蝶结挂旗', placeholder: '请输入产品描述' },
   { key: 'styleTone', label: '整体风格', defaultValue: '清新轻奢、少女感但不幼稚', placeholder: '请输入整体风格' },
   { key: 'lightingStyle', label: '摄影光线', defaultValue: '柔和漫射日光', placeholder: '请输入摄影光线' },
@@ -96,13 +99,50 @@ const BOW_TEMPLATE_VARIABLES: BowTemplateVariableDef[] = [
   },
 ];
 
-const BOW_TEMPLATE_VARIABLE_MAP = BOW_TEMPLATE_VARIABLES.reduce(
-  (acc, item) => {
-    acc[item.key] = item;
-    return acc;
+const HAIR_ORGANIZER_TEMPLATE_VARIABLES: TemplateVariableDef[] = [
+  { key: 'productName', label: '产品描述', defaultValue: '女孩发饰置物架（墙挂式发夹发带收纳架）', placeholder: '请输入产品描述' },
+  { key: 'styleTone', label: '整体风格', defaultValue: '北欧奶油风、温暖亲子生活方式', placeholder: '请输入整体风格' },
+  { key: 'lightingStyle', label: '摄影光线', defaultValue: '自然柔光摄影', placeholder: '请输入摄影光线' },
+  { key: 'colorPalette', label: '色彩方案', defaultValue: '奶油白、浅木色、马卡龙粉彩发饰点缀', placeholder: '请输入色彩方案' },
+  { key: 'topBlockStyle', label: '左侧信息区', defaultValue: '留出大面积留白用于品牌与标题文案', placeholder: '请输入信息区样式' },
+  { key: 'headlineText', label: '标题文案', defaultValue: 'Hair Accessory Organizer for Girls', placeholder: '请输入标题文案' },
+  { key: 'sceneSetting', label: '中部场景', defaultValue: '墙面挂置发饰收纳架，分层陈列发夹与发带', placeholder: '请输入中部场景' },
+  { key: 'rightScene', label: '右侧场景', defaultValue: '儿童房柜体与小女孩场景，强化产品使用人群与家居适配氛围', placeholder: '请输入右侧场景' },
+  { key: 'detailOne', label: '细节1', defaultValue: '分层收纳结构', placeholder: '请输入细节1' },
+  { key: 'detailTwo', label: '细节2', defaultValue: '夹子与发带整齐陈列', placeholder: '请输入细节2' },
+  { key: 'detailThree', label: '细节3', defaultValue: '儿童房家居融合感', placeholder: '请输入细节3' },
+  { key: 'copyOne', label: '英文点位1', defaultValue: 'Multi-layer Storage', placeholder: '请输入英文点位1' },
+  { key: 'copyTwo', label: '英文点位2', defaultValue: 'Neat & Easy Access', placeholder: '请输入英文点位2' },
+  { key: 'copyThree', label: '英文点位3', defaultValue: 'Kid Room Friendly', placeholder: '请输入英文点位3' },
+  { key: 'fontStyle', label: '字体建议', defaultValue: '圆润无衬线', placeholder: '请输入字体建议' },
+  { key: 'fontColor', label: '文字颜色', defaultValue: '深暖灰', placeholder: '请输入文字颜色' },
+  { key: 'designMood', label: '质感方向', defaultValue: '母婴精品海报', placeholder: '请输入质感方向' },
+  {
+    key: 'outputRequirement',
+    label: '输出要求',
+    defaultValue: '商业级清晰度，材质与光影真实自然，布料细节清晰，禁止logo水印与随机文字',
+    placeholder: '请输入输出要求',
   },
-  {} as Record<BowTemplateVariableKey, BowTemplateVariableDef>
-);
+];
+
+const VARIABLE_DEFS_BY_PRESET: Record<VariableTemplatePreset, TemplateVariableDef[]> = {
+  'bow-detail': BOW_TEMPLATE_VARIABLES,
+  'hair-organizer': HAIR_ORGANIZER_TEMPLATE_VARIABLES,
+};
+
+function createVariableMap(preset: VariableTemplatePreset): Record<TemplateVariableKey, TemplateVariableDef> {
+  return VARIABLE_DEFS_BY_PRESET[preset].reduce(
+    (acc, item) => {
+      acc[item.key] = item;
+      return acc;
+    },
+    {} as Record<TemplateVariableKey, TemplateVariableDef>
+  );
+}
+
+function isVariableTemplatePreset(preset: 'none' | 'bow-detail' | 'hair-organizer'): preset is VariableTemplatePreset {
+  return preset === 'bow-detail' || preset === 'hair-organizer';
+}
 
 function isTemplateVariableElement(element: SlateElement): element is TemplateVariableElementNode {
   return (element as { type?: string }).type === TEMPLATE_VARIABLE_ELEMENT;
@@ -117,8 +157,8 @@ function withTemplateVariables(editor: TemplateEditor): TemplateEditor {
   return editor;
 }
 
-function createVariableNode(key: BowTemplateVariableKey): TemplateVariableElementNode {
-  const item = BOW_TEMPLATE_VARIABLE_MAP[key];
+function createVariableNode(key: TemplateVariableKey, variableMap: Record<TemplateVariableKey, TemplateVariableDef>): TemplateVariableElementNode {
+  const item = variableMap[key];
   return {
     type: TEMPLATE_VARIABLE_ELEMENT,
     key: item.key,
@@ -130,25 +170,28 @@ function createVariableNode(key: BowTemplateVariableKey): TemplateVariableElemen
   };
 }
 
-function createParagraph(parts: Array<string | { key: BowTemplateVariableKey }>): Descendant {
+function createParagraph(
+  parts: Array<string | { key: TemplateVariableKey }>,
+  variableMap: Record<TemplateVariableKey, TemplateVariableDef>
+): Descendant {
   return {
     type: 'paragraph',
     children: parts.map((part) =>
       typeof part === 'string'
         ? { text: part }
-        : (createVariableNode(part.key) as unknown as Descendant)
+        : (createVariableNode(part.key, variableMap) as unknown as Descendant)
     ),
   } as Descendant;
 }
 
-function createBowTemplateDocument(): Descendant[] {
+function createBowTemplateDocument(variableMap: Record<TemplateVariableKey, TemplateVariableDef>): Descendant[] {
   return [
-    createParagraph(['生成一张蝴蝶结商品详情海报，竖版 3:4，产品为', { key: 'productName' }, '。']),
-    createParagraph(['整体风格：', { key: 'styleTone' }, '，画面干净明亮。']),
-    createParagraph(['色彩方案：', { key: 'colorPalette' }, '。']),
-    createParagraph(['构图与版式：']),
-    createParagraph(['1）顶部使用', { key: 'topBlockStyle' }, '并放置标题“', { key: 'headlineText' }, '”；']),
-    createParagraph(['2）中部以', { key: 'sceneSetting' }, '为主场景，展示真实悬挂效果；']),
+    createParagraph(['生成一张蝴蝶结商品详情海报，竖版 3:4，产品为', { key: 'productName' }, '。'], variableMap),
+    createParagraph(['整体风格：', { key: 'styleTone' }, '，画面干净明亮。'], variableMap),
+    createParagraph(['色彩方案：', { key: 'colorPalette' }, '。'], variableMap),
+    createParagraph(['构图与版式：'], variableMap),
+    createParagraph(['1）顶部使用', { key: 'topBlockStyle' }, '并放置标题“', { key: 'headlineText' }, '”；'], variableMap),
+    createParagraph(['2）中部以', { key: 'sceneSetting' }, '为主场景，展示真实悬挂效果；'], variableMap),
     createParagraph([
       '3）底部放置三个圆形细节特写，分别体现',
       { key: 'detailOne' },
@@ -157,8 +200,8 @@ function createBowTemplateDocument(): Descendant[] {
       '、',
       { key: 'detailThree' },
       '。',
-    ]),
-    createParagraph(['文字建议：', { key: 'copyOne' }, ' / ', { key: 'copyTwo' }, ' / ', { key: 'copyThree' }, '。']),
+    ], variableMap),
+    createParagraph(['文字建议：', { key: 'copyOne' }, ' / ', { key: 'copyTwo' }, ' / ', { key: 'copyThree' }, '。'], variableMap),
     createParagraph([
       '字体建议：',
       { key: 'fontStyle' },
@@ -167,9 +210,47 @@ function createBowTemplateDocument(): Descendant[] {
       '，整体质感偏',
       { key: 'designMood' },
       '。',
-    ]),
-    createParagraph(['输出要求：', { key: 'lightingStyle' }, '，', { key: 'outputRequirement' }, '。']),
+    ], variableMap),
+    createParagraph(['输出要求：', { key: 'lightingStyle' }, '，', { key: 'outputRequirement' }, '。'], variableMap),
   ];
+}
+
+function createHairOrganizerTemplateDocument(variableMap: Record<TemplateVariableKey, TemplateVariableDef>): Descendant[] {
+  return [
+    createParagraph(['生成一张高转化电商商品详情图，产品为', { key: 'productName' }, '。'], variableMap),
+    createParagraph(['整体风格：', { key: 'styleTone' }, '，画面干净通透。'], variableMap),
+    createParagraph(['色彩方案：', { key: 'colorPalette' }, '。'], variableMap),
+    createParagraph(['构图与版式：'], variableMap),
+    createParagraph(['1）左侧信息区：', { key: 'topBlockStyle' }, '，标题建议“', { key: 'headlineText' }, '”；'], variableMap),
+    createParagraph(['2）中部展示', { key: 'sceneSetting' }, '；'], variableMap),
+    createParagraph(['3）右侧展示', { key: 'rightScene' }, '。'], variableMap),
+    createParagraph([
+      '4）重点突出',
+      { key: 'detailOne' },
+      '、',
+      { key: 'detailTwo' },
+      '、',
+      { key: 'detailThree' },
+      '。',
+    ], variableMap),
+    createParagraph(['文案建议：', { key: 'copyOne' }, ' / ', { key: 'copyTwo' }, ' / ', { key: 'copyThree' }, '。'], variableMap),
+    createParagraph([
+      '字体建议：',
+      { key: 'fontStyle' },
+      '，颜色使用',
+      { key: 'fontColor' },
+      '，整体质感偏',
+      { key: 'designMood' },
+      '。',
+    ], variableMap),
+    createParagraph(['输出要求：', { key: 'lightingStyle' }, '，', { key: 'outputRequirement' }, '。'], variableMap),
+  ];
+}
+
+function createTemplateDocument(preset: VariableTemplatePreset): Descendant[] {
+  const variableMap = createVariableMap(preset);
+  if (preset === 'hair-organizer') return createHairOrganizerTemplateDocument(variableMap);
+  return createBowTemplateDocument(variableMap);
 }
 
 function TemplateVariableChip({
@@ -273,7 +354,7 @@ export function InputArea() {
   const [editor] = useState<TemplateEditor>(() =>
     withTemplateVariables(withReact(withHistory(createEditor())) as TemplateEditor)
   );
-  const [templateInitialValue] = useState<Descendant[]>(() => createBowTemplateDocument());
+  const [templateInitialValue] = useState<Descendant[]>(() => createTemplateDocument('bow-detail'));
 
   const {
     fileInputRef,
@@ -287,6 +368,7 @@ export function InputArea() {
   } = useImageUploadPicker();
 
   const isGenerating = tasks.some((t) => t.status === 'processing');
+  const usingVariableTemplate = isVariableTemplatePreset(inputTemplatePreset);
 
   const compileTemplatePrompt = useCallback((nodes: Descendant[]) => {
     const serializeNode = (node: SlateNode): string => {
@@ -302,8 +384,8 @@ export function InputArea() {
   }, []);
 
   useEffect(() => {
-    if (inputTemplatePreset !== 'bow-detail') return;
-    const nextDoc = createBowTemplateDocument();
+    if (!isVariableTemplatePreset(inputTemplatePreset)) return;
+    const nextDoc = createTemplateDocument(inputTemplatePreset);
     Editor.withoutNormalizing(editor, () => {
       for (let i = editor.children.length - 1; i >= 0; i -= 1) {
         Transforms.removeNodes(editor, { at: [i] });
@@ -314,14 +396,14 @@ export function InputArea() {
   }, [compileTemplatePrompt, editor, inputTemplatePreset, setInputValue]);
 
   const syncTemplatePromptToStore = useCallback(() => {
-    if (inputTemplatePreset !== 'bow-detail') return inputValue;
+    if (!isVariableTemplatePreset(inputTemplatePreset)) return inputValue;
     const compiled = compileTemplatePrompt(editor.children as Descendant[]);
     if (compiled !== inputValue) setInputValue(compiled);
     return compiled;
   }, [compileTemplatePrompt, editor, inputTemplatePreset, inputValue, setInputValue]);
 
   const handleGenerate = async () => {
-    const rawPrompt = inputTemplatePreset === 'bow-detail' ? syncTemplatePromptToStore() : inputValue;
+    const rawPrompt = usingVariableTemplate ? syncTemplatePromptToStore() : inputValue;
 
     if (!rawPrompt.trim() && uploadedImages.length === 0) {
       toast.error('请输入创作内容或上传产品图');
@@ -491,7 +573,7 @@ export function InputArea() {
         </motion.button>
 
         <div className="flex-1 min-w-0">
-          {inputTemplatePreset === 'bow-detail' ? (
+          {usingVariableTemplate ? (
             <div className="px-0 py-0">
               <Slate
                 editor={editor}
@@ -504,7 +586,7 @@ export function InputArea() {
                     setIsFocused(false);
                     syncTemplatePromptToStore();
                   }}
-                  placeholder="编辑蝴蝶结模板描述..."
+                  placeholder={inputTemplatePreset === 'hair-organizer' ? '编辑发饰置物架模板描述...' : '编辑蝴蝶结模板描述...'}
                   className="min-h-16 text-white placeholder:text-white/35"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {

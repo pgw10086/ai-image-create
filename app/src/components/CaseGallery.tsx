@@ -35,18 +35,40 @@ const templates: TemplateItem[] = [
 输出要求：柔和漫射日光，阴影轻，丝缎高光细腻、褶皱自然、边缘整齐，商业级清晰度，禁止 logo、水印、随机文字与杂乱背景。`,
     tags: ['母婴派对', '详情页模板', '丝带质感'],
   },
+  {
+    id: 'hair-organizer-template',
+    image: '/images/case-hair-organizer.jpg',
+    title: '发饰置物架商品图',
+    description:
+      '儿童房生活方式模板，突出墙挂式发饰收纳架的分层陈列、真实家居场景与人群适配，适用于跨境电商详情页主图与横幅。',
+    promptTemplate: `生成一张高转化电商商品详情图，产品为女孩发饰置物架（墙挂式发夹发带收纳架）。
+整体风格：北欧奶油风、温暖亲子生活方式、自然柔光摄影，画面干净通透。
+色彩方案：奶油白、浅木色、马卡龙粉彩发饰点缀，整体柔和高级。
+构图与版式：
+1）左侧保留大面积信息区，适合放置品牌与标题文案；
+2）中部展示墙挂式发饰置物架，重点表现分层收纳结构、蝴蝶结与发带整齐陈列；
+3）右侧展示儿童房柜体与小女孩场景，强化产品使用人群与家居适配氛围。
+文案建议：Hair Accessory Organizer for Girls / Multi-layer Storage / Neat & Easy Access。
+字体建议：圆润无衬线，深暖灰色，标题大字号，整体偏母婴精品海报。
+输出要求：商业级清晰度，材质与光影真实自然，布料细节清晰，禁止 logo、水印、随机文字与杂乱背景。`,
+    tags: ['儿童房场景', '收纳卖点', '生活方式'],
+  },
 ];
 
 export function CaseGallery() {
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateItem | null>(null);
   const { setInputValue, setInputTemplatePreset, addTask, updateTaskStatus } = useAppStore();
-  const currentTemplate = templates[0];
 
   const handleUseTemplate = (template: TemplateItem) => {
     setSelectedTemplate(null);
     if (template.id === 'bow-detail-template') {
       setInputTemplatePreset('bow-detail');
       toast.success('已加载蝴蝶结变量模板');
+      return;
+    }
+    if (template.id === 'hair-organizer-template') {
+      setInputTemplatePreset('hair-organizer');
+      toast.success('已加载发饰置物架变量模板');
       return;
     }
     setInputTemplatePreset('none');
@@ -110,64 +132,71 @@ export function CaseGallery() {
           <span className="text-white/45 text-sm">精选高转化模板，可一键套用</span>
         </div>
 
-        <div className="rounded-2xl border border-violet-400/20 bg-gradient-to-br from-violet-600/10 via-card/80 to-card/60 p-4 md:p-5">
-          <div className="grid gap-4 md:grid-cols-[320px_1fr] items-stretch">
-            <motion.button
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
-              onClick={() => setSelectedTemplate(currentTemplate)}
-              className="relative overflow-hidden rounded-2xl border border-white/10 aspect-square text-left"
+        <div className="space-y-4">
+          {templates.map((template) => (
+            <div
+              key={template.id}
+              className="rounded-2xl border border-violet-400/20 bg-gradient-to-br from-violet-600/10 via-card/80 to-card/60 p-4 md:p-5"
             >
-              <img
-                src={currentTemplate.image}
-                alt={currentTemplate.title}
-                className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-              <div className="absolute left-3 right-3 bottom-3">
-                <p className="text-white font-medium text-sm">{currentTemplate.title}</p>
-                <p className="text-white/70 text-xs mt-1">点击查看模板详情</p>
-              </div>
-            </motion.button>
-
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4 md:p-5 flex flex-col">
-              <div className="flex items-center gap-2 text-violet-200 mb-2">
-                <Wand2 className="w-4 h-4" />
-                <span className="text-sm font-medium">模板说明</span>
-              </div>
-
-              <h3 className="text-xl md:text-2xl font-semibold text-white mb-2">{currentTemplate.title}</h3>
-              <p className="text-white/65 text-sm leading-6">{currentTemplate.description}</p>
-
-              <div className="flex flex-wrap gap-2 mt-4 mb-5">
-                {currentTemplate.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="px-2.5 py-1 rounded-full text-xs bg-violet-600/20 text-violet-200 border border-violet-500/30"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-
-              <div className="mt-auto flex flex-wrap gap-2">
-                <Button
-                  onClick={() => handleUseTemplate(currentTemplate)}
-                  className="bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500"
+              <div className="grid gap-4 md:grid-cols-[320px_1fr] items-stretch">
+                <motion.button
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.99 }}
+                  onClick={() => setSelectedTemplate(template)}
+                  className="relative overflow-hidden rounded-2xl border border-white/10 aspect-square text-left"
                 >
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  一键套用模板
-                </Button>
-                <Button
-                  variant="outline"
-                  className="border-white/15 hover:bg-white/5"
-                  onClick={() => setSelectedTemplate(currentTemplate)}
-                >
-                  查看模板详情
-                </Button>
+                  <img
+                    src={template.image}
+                    alt={template.title}
+                    className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+                  <div className="absolute left-3 right-3 bottom-3">
+                    <p className="text-white font-medium text-sm">{template.title}</p>
+                    <p className="text-white/70 text-xs mt-1">点击查看模板详情</p>
+                  </div>
+                </motion.button>
+
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-4 md:p-5 flex flex-col">
+                  <div className="flex items-center gap-2 text-violet-200 mb-2">
+                    <Wand2 className="w-4 h-4" />
+                    <span className="text-sm font-medium">模板说明</span>
+                  </div>
+
+                  <h3 className="text-xl md:text-2xl font-semibold text-white mb-2">{template.title}</h3>
+                  <p className="text-white/65 text-sm leading-6">{template.description}</p>
+
+                  <div className="flex flex-wrap gap-2 mt-4 mb-5">
+                    {template.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="px-2.5 py-1 rounded-full text-xs bg-violet-600/20 text-violet-200 border border-violet-500/30"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className="mt-auto flex flex-wrap gap-2">
+                    <Button
+                      onClick={() => handleUseTemplate(template)}
+                      className="bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500"
+                    >
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      一键套用模板
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="border-white/15 hover:bg-white/5"
+                      onClick={() => setSelectedTemplate(template)}
+                    >
+                      查看模板详情
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          ))}
         </div>
       </motion.div>
 
