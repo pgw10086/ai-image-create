@@ -8,7 +8,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '商业产品摄影，两个黑色蕾丝蝴蝶结对称地摆放在纯粉色的背景上。左上角有少量粉色花朵作为点缀，略微失焦。整体画面干净明亮，光线柔和均匀，高清细节，极简主义风格。',
     defaultRatioMode: '1:1',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'bow-model-portrait',
@@ -17,7 +17,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '一位可爱的金发小女孩，发型是双丸子头，佩戴着黑色蕾丝蝴蝶结。她正对着镜头甜美地微笑。场景在室外花园，背景有美丽的散景效果。采用自然光，色调温暖，高质量人像特写。',
     defaultRatioMode: '3:4',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'bow-size-reference',
@@ -26,7 +26,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '一只干净的手，手掌向上轻轻托着一个黑色蕾丝蝴蝶结，用于直观展示产品的尺寸。背景是纯粉色的。光线明亮，焦点清晰，能看到产品的精致细节，商业摄影风格。',
     defaultRatioMode: '4:3',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'bow-size-annotated',
@@ -35,7 +35,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '一只黑色蕾丝蝴蝶结平铺在浅米粉背景中央，居中构图，中心有珍珠装饰。添加清晰的尺寸标注线与文字：横向标注 8.5cm/3.35inch，纵向标注 6.5cm/2.56inch。标注风格简洁专业，黑色细线与文字，画面干净，细节清晰，电商尺寸说明图风格。',
     defaultRatioMode: '3:4',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'bow-wig-reference',
@@ -44,7 +44,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '背面视角的假发展示图，浅金色发丝铺满画面，一只黑色蕾丝蝴蝶结固定在头发中部位置，中心珍珠清晰可见。背景为浅米色，光线柔和均匀，画面干净，细节清晰，电商佩戴参考图风格。',
     defaultRatioMode: '16:9',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'jewelry-rack-white-product',
@@ -53,7 +53,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '专业的电商产品摄影，纯白色背景，极简主义，影棚光，8k分辨率，超高清，金属质感强烈。',
     defaultRatioMode: '1:1',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'jewelry-rack-size-annotated',
@@ -62,7 +62,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '一款金色四层首饰置物架置于浅米白背景中央，30-45 度正侧视角，居中构图，仅保留产品主体，无饰品挂件与杂物。添加清晰的尺寸标注线与文字：横向总宽 26cm/10.24inch，纵向总高 32cm/12.60inch，底座深度 12cm/4.72inch。标注风格简洁专业，黑色细线与文字，箭头清晰，画面干净，细节锐利，电商尺寸说明图风格。',
     defaultRatioMode: '1:1',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'jewelry-rack-product-scene',
@@ -71,7 +71,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '生活方式产品摄影，明亮干净的家居桌面场景，浅木色桌面与白墙背景，首饰置物架作为画面主体置于桌面中央，挂有项链与耳饰，周围搭配简洁置物架、绿植、小摆件等软装。自然侧光，柔和阴影，色调温暖克制，构图整洁，真实高端电商场景图风格，无人物出镜，无杂乱背景。',
     defaultRatioMode: '16:9',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'jewelry-rack-model-scene',
@@ -80,7 +80,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '生活方式摄影，一位优雅的女性坐在卧室白色的梳妆台前化妆，前景是一个首饰置物架挂满珠宝，背景是模糊的舒适卧室，自然光线，柔和的色调，高品质生活氛围，真实感。',
     defaultRatioMode: '4:3',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'jewelry-rack-feature-breakdown',
@@ -89,7 +89,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '正面视图，图像中央是首饰架，周围预留充足的纯白背景留白，每个物品添加文字、图标和指示线。明亮均匀的影棚光，高分辨率，电商产品功能卖点分解图。',
     defaultRatioMode: '1:1',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'jewelry-rack-category-showcase',
@@ -98,7 +98,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '一张高端电商产品详情主图，采用明确的左右构图。左侧区域展示首饰收纳架，只需要产品部分，不要杂乱背景。右侧区域是一个带有圆角的白色信息面板，顶部印有棕金色艺术字体标题“4 Tier Jewelry Organizer Stand”。面板下方整齐排列两行蓝色线条风格矢量图标，并配有对应的金色文字说明：第一行包括项链图标配文“for Necklaces”、手链图标配文“for Bracelets”、耳环图标配文“for Earring”；第二行包括口红图标配文“for Lipsticks”、香水图标配文“for Perfumes”、别针图标配文“for Pins”、蝴蝶结发饰图标配文“Hair Accessories”。整体风格为干净柔和的米色背景、均匀明亮光线、极简主义商业摄影质感，重点突出右侧信息图与左侧产品的对应关系。',
     defaultRatioMode: '16:9',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'jewelry-rack-gift-scene-collage',
@@ -107,7 +107,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '一张高端电商详情图，采用左窄右宽的分栏构图。左侧为金色四层首饰收纳架产品实拍图，置于白色底座，挂有项链、耳环与戒指，仅保留产品主体，不要出现桌面摆件、绿植、杯子、书本等任何背景杂物。右侧为三宫格式生活方式拼图：中间偏左一张主图展示情侣送礼互动，右上和右下两张展示母女/姐妹或儿童收到礼物的温馨场景，人物表情自然真实。整体叠加优雅手写体文案“Nice Gift”，整张图统一使用干净柔和的米色背景，光线柔和均匀，画质清晰，商业摄影风格，突出“首饰架适合作为礼物”的卖点。',
     defaultRatioMode: '16:9',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'front',
@@ -116,7 +116,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '正视角度，主体居中，棚拍质感，柔和打光，清晰细节，干净背景，真实阴影，画面简洁，突出主体。',
     defaultRatioMode: '1:1',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'side',
@@ -125,7 +125,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '侧视角度，突出产品侧面结构与轮廓，棚拍质感，清晰细节，干净背景，真实阴影，画面简洁。',
     defaultRatioMode: '1:1',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'angle45',
@@ -134,7 +134,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '45度斜侧视角，立体感强，突出造型与材质质感，棚拍质感，清晰细节，干净背景，真实阴影。',
     defaultRatioMode: '1:1',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'detail',
@@ -143,7 +143,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '细节特写，微距视角，突出材质纹理与工艺细节，清晰锐利，棚拍质感，干净背景，避免过度虚化遮挡关键细节。',
     defaultRatioMode: '4:3',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'scene',
@@ -152,7 +152,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '使用场景，生活方式场景，自然光，真实环境，浅景深，产品被自然使用，画面干净，突出主体。',
     defaultRatioMode: '4:3',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'on-foot',
@@ -161,7 +161,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '上脚场景，街头或室内自然光，真实穿搭，突出鞋靴轮廓与材质，浅景深，画面干净，避免遮挡主体。',
     defaultRatioMode: '4:3',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'in-hand',
@@ -170,7 +170,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '手持展示，强调尺度与握持方式，肤色自然，光线柔和，背景简洁，突出主体与关键细节，避免夸张姿势。',
     defaultRatioMode: '4:3',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'scale-reference',
@@ -179,7 +179,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '尺度对比图，加入真实参照物（手掌、硬币、手机或桌面常见物），突出产品实际尺寸，构图简洁，细节清晰，背景干净。',
     defaultRatioMode: '4:3',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'what-in-box',
@@ -188,7 +188,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '包装清单平铺图，展示产品本体与全部配件，摆放整齐，层级清晰，背景干净，光线均匀，避免缺件或遮挡。',
     defaultRatioMode: '4:3',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'feature-callout',
@@ -197,7 +197,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '卖点信息图风格，突出1-3个核心功能点，结构化构图，预留简洁文案区，避免花哨贴纸与拥挤元素，主体清晰。',
     defaultRatioMode: '4:3',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'comparison',
@@ -206,7 +206,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '对比展示图，同场景下突出目标产品优势（尺寸、结构、性能或收纳效果），信息清晰，画面简洁，避免夸张失真。',
     defaultRatioMode: '4:3',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'usage-step',
@@ -215,7 +215,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '使用步骤图，分步骤展示安装或使用流程，动作自然，顺序清晰，背景干净，突出关键操作区域。',
     defaultRatioMode: '3:4',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'before-after',
@@ -224,7 +224,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '前后对比场景，左前右后或上下分区，变化真实可信，光线一致，画面干净，突出效果差异。',
     defaultRatioMode: '4:3',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'color-variants',
@@ -233,7 +233,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '颜色或款式展示图，同一产品多色多款并排陈列，色彩准确，间距整齐，避免遮挡主体，整体风格统一。',
     defaultRatioMode: '1:1',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
   {
     id: 'material-closeup',
@@ -242,7 +242,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     defaultPromptSuffixZh:
       '材质工艺特写，微距展示纹理、缝线、接口或表面处理细节，锐利清晰，光线柔和，避免过度磨皮与失真。',
     defaultRatioMode: '4:3',
-    defaultImageCount: 2,
+    defaultImageCount: 1,
   },
 ];
 

@@ -26,32 +26,52 @@ export async function generateSuiteItem(params: {
   watermark?: boolean;
   signal?: AbortSignal;
 }) {
-  const group = computeGroupGeneration({
-    requestedCount: params.imageCount ?? 1,
-    referenceCount: params.referenceImages.length,
-    modelId: params.model,
-  });
-  const response = await generateImage({
-    prompt: params.prompt,
-    image: toImageParam(params.referenceImages),
-    model: params.model as any,
-    size: params.size,
-    watermark: params.watermark,
-    sequential_image_generation: group.sequential_image_generation,
-    sequential_image_generation_options:
-      group.sequential_image_generation === 'auto' ? { max_images: group.maxImages } : undefined,
-    signal: params.signal,
-  } as any);
+  const targetCount = Math.max(1, Math.min(15, Math.floor(params.imageCount ?? 1)));
+  const images: Array<{ url: string; prompt: string }> = [];
+  const maxAttempts = Math.max(3, targetCount * 2);
+  let attempts = 0;
 
-  if (response.data && response.data.length > 0 && response.data[0].url) {
-    const images = response.data
+  while (images.length < targetCount && attempts < maxAttempts) {
+    attempts += 1;
+    const remaining = targetCount - images.length;
+    const group = computeGroupGeneration({
+      requestedCount: remaining,
+      referenceCount: params.referenceImages.length,
+      modelId: params.model,
+    });
+
+    const response = await generateImage({
+      prompt: params.prompt,
+      image: toImageParam(params.referenceImages),
+      model: params.model as any,
+      size: params.size,
+      watermark: params.watermark,
+      sequential_image_generation: group.sequential_image_generation,
+      sequential_image_generation_options:
+        group.sequential_image_generation === 'auto' ? { max_images: group.maxImages } : undefined,
+      signal: params.signal,
+    } as any);
+
+    const batch = (response.data ?? [])
       .filter((d: any) => d?.url)
-      .map((d: any) => ({ url: d.url, prompt: params.prompt }));
-    return { images };
+      .map((d: any) => ({ url: d.url as string, prompt: params.prompt }));
+
+    if (batch.length === 0) {
+      const errorMsg = response.error?.message || response.message || '生成失败，请重试';
+      if (images.length > 0) {
+        throw new Error(`${errorMsg}（已生成 ${images.length}/${targetCount} 张）`);
+      }
+      throw new Error(errorMsg);
+    }
+
+    images.push(...batch);
   }
 
-  const errorMsg = response.error?.message || response.message || '生成失败，请重试';
-  throw new Error(errorMsg);
+  if (images.length < targetCount) {
+    throw new Error(`生成数量不足，已生成 ${images.length}/${targetCount} 张，请重试`);
+  }
+
+  return { images: images.slice(0, targetCount) };
 }
 
 export async function executeSuiteGeneration(params: {
@@ -161,4 +181,3 @@ export async function executeSuiteGeneration(params: {
 
   return result;
 }
-

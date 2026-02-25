@@ -69,7 +69,7 @@ export function SuiteGeneratorView() {
     promptSuffixZh: string;
     ratioMode: string;
     imageCount: number;
-  }>({ name: '', description: '', promptSuffixZh: '', ratioMode: '1:1', imageCount: 2 });
+  }>({ name: '', description: '', promptSuffixZh: '', ratioMode: '1:1', imageCount: 1 });
 
   const isGenerating = tasks.some((t) => t.status === 'processing');
   const abortRef = useRef<AbortController | null>(null);
@@ -246,7 +246,7 @@ export function SuiteGeneratorView() {
       overrides?.sizeResolution ?? (sizeMode === 'resolution' ? (resolveResolutionOptions(modelId)[0] as any) : undefined);
     const sizePx = overrides?.sizePx ?? (sizeMode === 'pixels' ? recommendedPixelSizesByRatio(ratioMode, modelId)[0] : undefined);
     const size = overrides?.size ?? resolveSizeFromItemConfig({ ratioMode, sizeMode, sizeResolution, sizePx, modelId });
-    const imageCount = overrides?.imageCount ?? shot?.defaultImageCount ?? 2;
+    const imageCount = overrides?.imageCount ?? shot?.defaultImageCount ?? 1;
     const promptBase = overrides?.promptBase ?? joinPrompt(baseGlobal, shot?.defaultPromptSuffixZh ?? '');
     const prompt = composeItemPrompt({
       promptBase,
@@ -887,7 +887,7 @@ export function SuiteGeneratorView() {
                   size="sm"
                   disabled={isGenerating}
                   onClick={() => {
-                    setCustomShotDraft({ name: '', description: '', promptSuffixZh: '', ratioMode: '1:1', imageCount: 2 });
+                    setCustomShotDraft({ name: '', description: '', promptSuffixZh: '', ratioMode: '1:1', imageCount: 1 });
                     setCustomShotDialogOpen(true);
                   }}
                 >
