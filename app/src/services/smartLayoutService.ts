@@ -303,7 +303,6 @@ export function composeLayoutPrompt(zones: LayoutZone[], context?: GenerationCon
     'Do not draw borders, boxes, numbers, labels, or any text.',
     'All objects must stay strictly inside their assigned regions.',
     'Respect occlusion and depth order; no floating objects.',
-    'Do not embed objects into other objects unless explicitly required.',
     ...buildChecklistLines(),
   ];
 
@@ -455,7 +454,6 @@ export async function composeLayoutForGeneration(
     'Do not draw borders, boxes, numbers, labels, or any text.',
     'All objects must stay strictly inside their assigned regions.',
     'Respect occlusion and depth order; no floating objects.',
-    'Do not embed objects into other objects unless explicitly required.',
     ...buildChecklistLines(),
   ];
 

@@ -293,9 +293,11 @@ export function SmartLayoutView({ className }: { className?: string }) {
         canvasHeight: canvasSize.height,
         modelId,
       });
-      const requestSize = fixed ? fixedResolved.size : smartResolved.size;
-      const sketchSize = fixed ? fixedResolved.size : canvasResolved.size;
-      const sizeHint = fixed ? fixedResolved.hint : smartResolved.hint || canvasResolved.hint;
+      const smartSize = canvasResolved.size || smartResolved.size;
+      const smartHint = canvasResolved.hint || smartResolved.hint;
+      const requestSize = fixed ? fixedResolved.size : smartSize;
+      const sketchSize = fixed ? fixedResolved.size : smartSize;
+      const sizeHint = fixed ? fixedResolved.hint : smartHint;
 
       const generation = await composeLayoutForGeneration({
         zones: normalizedZones,
