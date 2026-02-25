@@ -60,7 +60,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     name: '尺寸标注图',
     description: '30-45度结构展示，带标注线，突出尺寸信息与结构清晰度。',
     defaultPromptSuffixZh:
-      '产品正侧面角度（约30-45度），无装饰物，结构清晰，产品加标注线。',
+      '一款金色四层首饰置物架置于浅米白背景中央，30-45 度正侧视角，居中构图，仅保留产品主体，无饰品挂件与杂物。添加清晰的尺寸标注线与文字：横向总宽 26cm/10.24inch，纵向总高 32cm/12.60inch，底座深度 12cm/4.72inch。标注风格简洁专业，黑色细线与文字，箭头清晰，画面干净，细节锐利，电商尺寸说明图风格。',
     defaultRatioMode: '1:1',
     defaultImageCount: 2,
   },
