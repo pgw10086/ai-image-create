@@ -1154,8 +1154,8 @@ export function SmartLayoutView({ className }: { className?: string }) {
          </DialogContent>
        </Dialog>
 
-       <Dialog open={templatesOpen} onOpenChange={setTemplatesOpen}>
-         <DialogContent className="sm:max-w-[980px] bg-[#14141a] border-white/10 text-white">
+      <Dialog open={templatesOpen} onOpenChange={setTemplatesOpen}>
+        <DialogContent className="sm:max-w-[980px] max-h-[85vh] overflow-y-auto bg-[#14141a] border-white/10 text-white">
            <DialogHeader>
              <DialogTitle>模板库</DialogTitle>
            </DialogHeader>
