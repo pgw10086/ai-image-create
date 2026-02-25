@@ -12,7 +12,11 @@ import { TAIHAO_PRO_MODEL_ID, isTaihaoProModel } from './generationContext';
 const VOLC_API_KEY = import.meta.env.VITE_VOLC_API_KEY || '';
 const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY || '';
 const VOLC_API_URL = 'https://ark.cn-beijing.volces.com/api/v3/images/generations';
-const TIMEOUT_MS = 60000;
+const GENERATION_TIMEOUT_BASE_MS = 90000;
+const GENERATION_TIMEOUT_PER_IMAGE_MS = 30000;
+const GENERATION_TIMEOUT_REFERENCE_BONUS_MS = 15000;
+const GENERATION_TIMEOUT_GEMINI_BONUS_MS = 30000;
+const GENERATION_TIMEOUT_MAX_MS = 300000;
 
 type ImageInlineData = {
   data: string;
@@ -153,6 +157,22 @@ function getRequestedImageCount(params: GenerateImageParams) {
   return 1;
 }
 
+function getReferenceImageCount(image?: string | string[]) {
+  if (!image) return 0;
+  return Array.isArray(image) ? image.length : 1;
+}
+
+function resolveGenerationTimeoutMs(params: Pick<GenerateImageParams, 'model' | 'image' | 'sequential_image_generation' | 'sequential_image_generation_options'>) {
+  const requestedCount = getRequestedImageCount(params as GenerateImageParams);
+  const referenceCount = getReferenceImageCount(params.image);
+
+  let timeoutMs = GENERATION_TIMEOUT_BASE_MS + Math.max(0, requestedCount - 1) * GENERATION_TIMEOUT_PER_IMAGE_MS;
+  if (referenceCount > 0) timeoutMs += GENERATION_TIMEOUT_REFERENCE_BONUS_MS;
+  if (isGeminiModel(params.model || '')) timeoutMs += GENERATION_TIMEOUT_GEMINI_BONUS_MS;
+
+  return Math.min(timeoutMs, GENERATION_TIMEOUT_MAX_MS);
+}
+
 function toDataUri(imageData: string, mimeType = 'image/png') {
   const value = (imageData ?? '').trim();
   if (!value) return '';
@@ -270,10 +290,10 @@ function waitForAbort(signal?: AbortSignal) {
   });
 }
 
-async function withTimeoutAndAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+async function withTimeoutAndAbort<T>(promise: Promise<T>, signal?: AbortSignal, timeoutMs = GENERATION_TIMEOUT_BASE_MS): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => reject({ code: APIErrorCodes.TIMEOUT, message: 'Request timed out' }), TIMEOUT_MS);
+    timeoutId = setTimeout(() => reject({ code: APIErrorCodes.TIMEOUT, message: 'Request timed out' }), timeoutMs);
   });
   const abortPromise = waitForAbort(signal);
 
@@ -298,6 +318,7 @@ async function generateByGemini(params: GenerateImageParams): Promise<GenerateIm
   const imageSize = mapSizeToImageSize(normalizedSize);
   const imageInputs = params.image ? (Array.isArray(params.image) ? params.image : [params.image]) : [];
   const requestedCount = getRequestedImageCount(params);
+  const timeoutMs = resolveGenerationTimeoutMs(params);
 
   try {
     const imageParts = await Promise.all(
@@ -320,7 +341,7 @@ async function generateByGemini(params: GenerateImageParams): Promise<GenerateIm
       config: baseConfig,
     } as any;
 
-    const response: any = await withTimeoutAndAbort(ai.models.generateContent(requestPayload), params.signal);
+    const response: any = await withTimeoutAndAbort(ai.models.generateContent(requestPayload), params.signal, timeoutMs);
 
     const allImages = extractGeminiImages(response, normalizedSize);
     const finalImages = allImages.slice(0, requestedCount);
@@ -407,6 +428,7 @@ async function generateBySeedream(params: GenerateImageParams): Promise<Generate
     response_format: 'url',
     watermark,
   };
+  const timeoutMs = resolveGenerationTimeoutMs(params);
 
   try {
     const data = await fetchWithRetry(VOLC_API_URL, {
@@ -417,7 +439,7 @@ async function generateBySeedream(params: GenerateImageParams): Promise<Generate
       },
       body: JSON.stringify(requestBody),
       signal,
-    });
+    }, 1, timeoutMs);
 
     return normalizeSeedreamResponse(data, normalizedSize);
   } catch (error: any) {
@@ -455,21 +477,27 @@ export async function generateImage(params: GenerateImageParams): Promise<Genera
   });
 }
 
-async function fetchWithRetry(url: string, options: RequestInit, retries = 1): Promise<GenerateImageResponse> {
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  retries = 1,
+  timeoutMs = GENERATION_TIMEOUT_BASE_MS
+): Promise<GenerateImageResponse> {
   let didTimeout = false;
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => {
-      didTimeout = true;
-      controller.abort();
-    }, TIMEOUT_MS);
+  const controller = new AbortController();
+  const externalSignal = options.signal;
+  const onExternalAbort = () => controller.abort();
+  const timeoutId = setTimeout(() => {
+    didTimeout = true;
+    controller.abort();
+  }, timeoutMs);
 
-    const externalSignal = options.signal;
+  try {
     if (externalSignal) {
       if (externalSignal.aborted) {
         controller.abort();
       } else {
-        externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
+        externalSignal.addEventListener('abort', onExternalAbort, { once: true });
       }
     }
 
@@ -478,12 +506,10 @@ async function fetchWithRetry(url: string, options: RequestInit, retries = 1): P
       signal: controller.signal,
     });
 
-    clearTimeout(timeoutId);
-
     if (!response.ok) {
       if (response.status >= 500 && retries > 0) {
         console.warn(`Request failed with status ${response.status}, retrying...`);
-        return fetchWithRetry(url, options, retries - 1);
+        return fetchWithRetry(url, options, retries - 1, timeoutMs);
       }
 
       const errorData = await response.json().catch(() => ({}));
@@ -502,6 +528,11 @@ async function fetchWithRetry(url: string, options: RequestInit, retries = 1): P
       throw { code: 'abort', message: 'Request aborted' };
     }
     throw error;
+  } finally {
+    clearTimeout(timeoutId);
+    if (externalSignal) {
+      externalSignal.removeEventListener('abort', onExternalAbort);
+    }
   }
 }
 
