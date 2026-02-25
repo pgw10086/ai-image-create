@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Plus, Sparkles, Send, X, Loader2, Eye } from 'lucide-react';
+import { Plus, Sparkles, Send, X, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { createEditor, Editor, Element as SlateElement, Text, Transforms } from 'slate';
 import type { Descendant, Node as SlateNode } from 'slate';
@@ -10,6 +10,7 @@ import type { HistoryEditor } from 'slate-history';
 import { useAppStore } from '@/store/appStore';
 import type { GenerationTask } from '@/store/appStore';
 import { generateImage } from '@/lib/api';
+import { polishFreeGenerationPrompt } from '@/lib/bigmodel';
 import {
   buildPromptWithContext,
   computeGroupGeneration,
@@ -24,14 +25,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 
 const TEMPLATE_VARIABLE_ELEMENT = 'template-variable';
-
-const examplePrompts = [
-  '无线耳机，主动降噪，地铁上使用',
-  '智能手表，运动监测，户外跑步',
-  '护肤套装，保湿补水，浴室场景',
-  '运动鞋，透气轻便，健身房场景',
-  '咖啡机，意式浓缩，厨房台面',
-];
 
 type TemplateEditor = Editor & ReactEditor & HistoryEditor;
 
@@ -351,6 +344,7 @@ export function InputArea() {
   } = useAppStore();
 
   const [isFocused, setIsFocused] = useState(false);
+  const [isPolishing, setIsPolishing] = useState(false);
   const [editor] = useState<TemplateEditor>(() =>
     withTemplateVariables(withReact(withHistory(createEditor())) as TemplateEditor)
   );
@@ -490,18 +484,35 @@ export function InputArea() {
     }
   };
 
-  const handleAIWrite = () => {
-    const randomPrompt = examplePrompts[Math.floor(Math.random() * examplePrompts.length)];
-    setInputTemplatePreset('none');
-    setInputValue(randomPrompt);
-    toast.success('已生成创意描述');
-  };
+  const hasChinese = (input: string) => /[\u4e00-\u9fff]/.test(input);
 
-  const handleViewExample = () => {
-    const randomPrompt = examplePrompts[Math.floor(Math.random() * examplePrompts.length)];
-    setInputTemplatePreset('none');
-    setInputValue(randomPrompt);
-    toast.info('已加载示例，点击发送即可生成');
+  const detectLanguage = (prompt: string) => (hasChinese(prompt) ? ('zh' as const) : ('en' as const));
+
+  const handleAIPolish = async () => {
+    if (isPolishing) return;
+    const rawPrompt = usingVariableTemplate ? syncTemplatePromptToStore() : inputValue;
+    const current = (rawPrompt || '').trim();
+
+    if (!current) {
+      toast.error('请先输入提示词，再进行 AI 润色');
+      return;
+    }
+
+    setIsPolishing(true);
+    try {
+      const polished = await polishFreeGenerationPrompt({
+        prompt: current,
+        language: detectLanguage(current),
+      });
+      setInputTemplatePreset('none');
+      setInputValue(polished);
+      toast.success('已完成 AI 润色');
+    } catch (e: any) {
+      const message = e instanceof Error ? e.message : '润色失败';
+      toast.error('润色失败: ' + message);
+    } finally {
+      setIsPolishing(false);
+    }
   };
 
   const renderElement = useCallback((props: RenderElementProps) => {
@@ -618,24 +629,13 @@ export function InputArea() {
         <motion.button
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
-          onClick={handleViewExample}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-white/60 hover:text-white hover:bg-white/5 transition-colors flex-shrink-0"
-        >
-          <Eye className="w-4 h-4" />
-          <span className="text-sm">查看示例</span>
-        </motion.button>
-
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={handleAIWrite}
-          disabled={isGenerating}
+          onClick={() => void handleAIPolish()}
+          disabled={isGenerating || isPolishing}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 text-white text-sm font-medium hover:shadow-lg hover:shadow-violet-600/25 transition-shadow flex-shrink-0 disabled:opacity-50"
         >
-          <Sparkles className="w-4 h-4" />
-          <span>AI 帮我写</span>
+          {isPolishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+          <span>{isPolishing ? '润色中...' : 'AI 润色'}</span>
         </motion.button>
-
         <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}

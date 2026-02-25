@@ -124,3 +124,69 @@ export async function optimizeSmartLayoutZonePrompts(input: {
     .filter((z) => z.id && z.prompt);
 }
 
+export async function polishFreeGenerationPrompt(input: {
+  prompt: string;
+  language?: 'zh' | 'en';
+}): Promise<string> {
+  if (!BIGMODEL_API_KEY) {
+    throw new Error('未配置 VITE_BIGMODEL_API_KEY');
+  }
+
+  const rawPrompt = (input.prompt || '').trim();
+  if (!rawPrompt) {
+    throw new Error('提示词为空，无法润色');
+  }
+
+  const system = [
+    '你是电商商品图生成提示词润色助手。',
+    '任务：在不改变用户核心意图的前提下，把输入润色为更清晰、可执行、稳定出图的提示词。',
+    '要求：',
+    '- 保持原语言（中文输入输出中文，英文输入输出英文）。',
+    '- 不编造不存在的产品信息，不新增品牌、价格、人名等虚构细节。',
+    '- 允许补充必要的画面结构、材质、光线、镜头、背景约束，但要简洁。',
+    '- 禁止输出代码块、解释、前后缀说明。',
+    '输出：仅输出 JSON 对象 {"prompt":"..."}。',
+  ].join('\n');
+
+  const response = (await fetchJson(
+    BIGMODEL_API_URL,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${BIGMODEL_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'glm-5',
+        messages: [
+          { role: 'system', content: system },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              language: input.language || 'zh',
+              prompt: rawPrompt,
+            }),
+          },
+        ] as ChatMessage[],
+        temperature: 0.2,
+        stream: false,
+        max_tokens: 1024,
+        response_format: { type: 'json_object' },
+      }),
+    },
+    TIMEOUT_MS
+  )) as BigModelChatResponse;
+
+  const content = response.choices?.[0]?.message?.content;
+  if (!content) {
+    const message = response.error?.message || '模型未返回内容';
+    throw new Error(message);
+  }
+
+  const parsed = parseJsonObject<{ prompt?: string }>(content);
+  const polishedPrompt = (parsed.prompt || '').trim();
+  if (!polishedPrompt) {
+    throw new Error('模型未返回可用润色结果');
+  }
+  return polishedPrompt;
+}
