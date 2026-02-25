@@ -73,22 +73,27 @@ type BowTemplateVariableDef = {
 
 const BOW_TEMPLATE_VARIABLES: BowTemplateVariableDef[] = [
   { key: 'productName', label: '产品描述', defaultValue: '粉蓝配色蝴蝶结挂旗', placeholder: '请输入产品描述' },
-  { key: 'styleTone', label: '整体风格', defaultValue: '清新梦幻', placeholder: '请输入整体风格' },
-  { key: 'lightingStyle', label: '摄影光线', defaultValue: '高调柔光摄影', placeholder: '请输入摄影光线' },
-  { key: 'colorPalette', label: '色彩方案', defaultValue: '婴儿蓝、樱花粉、纯白，保持高级和谐', placeholder: '请输入色彩方案' },
-  { key: 'topBlockStyle', label: '顶部版式', defaultValue: '浅蓝波浪形区块', placeholder: '请输入顶部版式' },
+  { key: 'styleTone', label: '整体风格', defaultValue: '清新轻奢、少女感但不幼稚', placeholder: '请输入整体风格' },
+  { key: 'lightingStyle', label: '摄影光线', defaultValue: '柔和漫射日光', placeholder: '请输入摄影光线' },
+  { key: 'colorPalette', label: '色彩方案', defaultValue: '马卡龙蓝、樱花粉、纯白，保持高级和谐', placeholder: '请输入色彩方案' },
+  { key: 'topBlockStyle', label: '顶部版式', defaultValue: '浅蓝几何/波浪区块并保留留白', placeholder: '请输入顶部版式' },
   { key: 'headlineText', label: '标题文案', defaultValue: 'PRODUCT DETAILS', placeholder: '请输入标题文案' },
-  { key: 'sceneSetting', label: '中部场景', defaultValue: '白色壁炉/派对布景', placeholder: '请输入中部场景' },
-  { key: 'detailOne', label: '细节1', defaultValue: '背面做工', placeholder: '请输入细节1' },
-  { key: 'detailTwo', label: '细节2', defaultValue: '燕尾剪裁', placeholder: '请输入细节2' },
-  { key: 'detailThree', label: '细节3', defaultValue: '丝滑光泽', placeholder: '请输入细节3' },
+  { key: 'sceneSetting', label: '中部场景', defaultValue: '白色法式壁炉场景，粉蓝蝴蝶结弧线挂旗', placeholder: '请输入中部场景' },
+  { key: 'detailOne', label: '细节1', defaultValue: '背面结构', placeholder: '请输入细节1' },
+  { key: 'detailTwo', label: '细节2', defaultValue: '燕尾尾部设计', placeholder: '请输入细节2' },
+  { key: 'detailThree', label: '细节3', defaultValue: '丝缎光泽（手持展示）', placeholder: '请输入细节3' },
   { key: 'copyOne', label: '英文点位1', defaultValue: 'Back View', placeholder: '请输入英文点位1' },
-  { key: 'copyTwo', label: '英文点位2', defaultValue: 'Swallowtail Design', placeholder: '请输入英文点位2' },
+  { key: 'copyTwo', label: '英文点位2', defaultValue: 'Swallowtail-tail Design', placeholder: '请输入英文点位2' },
   { key: 'copyThree', label: '英文点位3', defaultValue: 'Soft Silky Luster', placeholder: '请输入英文点位3' },
-  { key: 'fontStyle', label: '字体建议', defaultValue: '优雅手写体', placeholder: '请输入字体建议' },
+  { key: 'fontStyle', label: '字体建议', defaultValue: '现代衬线或优雅斜体衬线', placeholder: '请输入字体建议' },
   { key: 'fontColor', label: '文字颜色', defaultValue: '深灰蓝', placeholder: '请输入文字颜色' },
-  { key: 'designMood', label: '质感方向', defaultValue: '精品海报', placeholder: '请输入质感方向' },
-  { key: 'outputRequirement', label: '输出要求', defaultValue: '商业级清晰度，材质与光影真实自然', placeholder: '请输入输出要求' },
+  { key: 'designMood', label: '质感方向', defaultValue: '精品电商海报', placeholder: '请输入质感方向' },
+  {
+    key: 'outputRequirement',
+    label: '输出要求',
+    defaultValue: '商业级清晰度，丝缎高光细腻、褶皱自然、边缘整齐，禁止logo水印与随机文字',
+    placeholder: '请输入输出要求',
+  },
 ];
 
 const BOW_TEMPLATE_VARIABLE_MAP = BOW_TEMPLATE_VARIABLES.reduce(
@@ -138,12 +143,12 @@ function createParagraph(parts: Array<string | { key: BowTemplateVariableKey }>)
 
 function createBowTemplateDocument(): Descendant[] {
   return [
-    createParagraph(['请生成一张高转化电商商品详情图，产品为', { key: 'productName' }, '。']),
-    createParagraph(['整体风格：', { key: 'styleTone' }, '、', { key: 'lightingStyle' }, '，画面干净通透。']),
+    createParagraph(['生成一张蝴蝶结商品详情海报，竖版 3:4，产品为', { key: 'productName' }, '。']),
+    createParagraph(['整体风格：', { key: 'styleTone' }, '，画面干净明亮。']),
     createParagraph(['色彩方案：', { key: 'colorPalette' }, '。']),
-    createParagraph(['版式建议：']),
+    createParagraph(['构图与版式：']),
     createParagraph(['1）顶部使用', { key: 'topBlockStyle' }, '并放置标题“', { key: 'headlineText' }, '”；']),
-    createParagraph(['2）中部展示产品在', { key: 'sceneSetting' }, '中的真实悬挂效果；']),
+    createParagraph(['2）中部以', { key: 'sceneSetting' }, '为主场景，展示真实悬挂效果；']),
     createParagraph([
       '3）底部放置三个圆形细节特写，分别体现',
       { key: 'detailOne' },
@@ -163,7 +168,7 @@ function createBowTemplateDocument(): Descendant[] {
       { key: 'designMood' },
       '。',
     ]),
-    createParagraph(['输出要求：', { key: 'outputRequirement' }, '。']),
+    createParagraph(['输出要求：', { key: 'lightingStyle' }, '，', { key: 'outputRequirement' }, '。']),
   ];
 }
 
