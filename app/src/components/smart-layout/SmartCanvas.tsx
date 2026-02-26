@@ -40,11 +40,28 @@ export const SmartCanvas = forwardRef<SmartCanvasHandle, SmartCanvasProps>(({
     };
   };
 
+  const isFullCanvasBackground = (zone: LayoutZone) => {
+    if (zone.type !== 'background') return false;
+    const eps = 2;
+    return (
+      zone.x <= eps &&
+      zone.y <= eps &&
+      zone.width >= canvasSize.width - eps &&
+      zone.height >= canvasSize.height - eps
+    );
+  };
+
   const handleMouseDown = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     const forceDraw = drawMode || e.shiftKey;
-    if (!forceDraw && (target.closest('.moveable-control-box') || target.closest('[id^="zone-"]'))) {
-      return;
+    if (!forceDraw && target.closest('.moveable-control-box')) return;
+    if (!forceDraw) {
+      const zoneEl = target.closest('[id^="zone-"]') as HTMLElement | null;
+      if (zoneEl) {
+        const id = zoneEl.id.replace('zone-', '');
+        const zone = zones.find((z) => z.id === id);
+        if (!zone || !isFullCanvasBackground(zone)) return;
+      }
     }
 
     const { x, y } = getRelativePos(e);
@@ -141,7 +158,7 @@ export const SmartCanvas = forwardRef<SmartCanvasHandle, SmartCanvasProps>(({
           backgroundImage: 'radial-gradient(#e5e7eb 1px, transparent 1px)',
           backgroundSize: '20px 20px'
         }}
-        onMouseDown={handleMouseDown}
+        onMouseDownCapture={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={() => {
@@ -160,6 +177,9 @@ export const SmartCanvas = forwardRef<SmartCanvasHandle, SmartCanvasProps>(({
             refImageSrc={getRefImageSrc?.(zone) ?? zone.refImage}
             onMouseDown={(e) => {
               if (drawMode || e.shiftKey) {
+                return;
+              }
+              if (isFullCanvasBackground(zone)) {
                 return;
               }
               e.stopPropagation();

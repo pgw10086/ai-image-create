@@ -603,8 +603,19 @@ export type SmartLayoutTemplateImageParseZone = {
   zIndex?: number;
 };
 
+export type SmartLayoutTemplateImageMainCandidate = {
+  bboxNormalized: { x: number; y: number; w: number; h: number };
+  confidence: number;
+  reason: string;
+  product?: string;
+};
+
 export type SmartLayoutTemplateImageParseResult = {
   name?: string;
+  product?: string;
+  mainConfidence?: number;
+  mainReason?: string;
+  mainCandidates?: SmartLayoutTemplateImageMainCandidate[];
   zones: SmartLayoutTemplateImageParseZone[];
 };
 
@@ -630,6 +641,11 @@ function sanitizeBboxNormalized(input: any) {
   return { x, y, w: ww, h: hh };
 }
 
+function sanitizeConfidence(input: any) {
+  const v = Number(input);
+  return clamp01(Number.isFinite(v) ? v : 0);
+}
+
 function parseSmartLayoutTemplateImageJson(input: string): SmartLayoutTemplateImageParseResult {
   const trimmed = (input || '').trim();
   const candidate = extractJsonCandidate(trimmed);
@@ -647,12 +663,34 @@ function parseSmartLayoutTemplateImageJson(input: string): SmartLayoutTemplateIm
     })
     .filter(Boolean) as SmartLayoutTemplateImageParseZone[];
   const name = typeof parsed?.name === 'string' ? parsed.name.trim() : undefined;
-  return { name, zones };
+  const product = typeof parsed?.product === 'string' ? parsed.product.trim() : undefined;
+  const mainConfidence = sanitizeConfidence(parsed?.mainConfidence);
+  const mainReason = typeof parsed?.mainReason === 'string' ? parsed.mainReason.trim() : undefined;
+  const mainCandidatesRaw = Array.isArray(parsed?.mainCandidates) ? parsed.mainCandidates : [];
+  const mainCandidates = mainCandidatesRaw
+    .map((c: any) => {
+      const bboxNormalized = sanitizeBboxNormalized(c?.bboxNormalized);
+      const confidence = sanitizeConfidence(c?.confidence);
+      const reason = typeof c?.reason === 'string' ? c.reason.trim() : '';
+      if (!reason) return null;
+      const candidateProduct = typeof c?.product === 'string' ? c.product.trim() : undefined;
+      return { bboxNormalized, confidence, reason, product: candidateProduct } satisfies SmartLayoutTemplateImageMainCandidate;
+    })
+    .filter(Boolean) as SmartLayoutTemplateImageMainCandidate[];
+  return {
+    name,
+    product,
+    mainConfidence: Number.isFinite(Number(parsed?.mainConfidence)) ? mainConfidence : undefined,
+    mainReason,
+    mainCandidates: mainCandidates.length > 0 ? mainCandidates : undefined,
+    zones,
+  };
 }
 
 export async function parseSmartLayoutTemplateFromImage(input: {
   image: string;
-  language?: 'zh' | 'en';
+  outputLanguage?: 'auto' | 'zh' | 'en';
+  productHint?: string;
   signal?: AbortSignal;
 }): Promise<SmartLayoutTemplateImageParseResult> {
   const ai = getGeminiClient();
@@ -663,16 +701,21 @@ export async function parseSmartLayoutTemplateFromImage(input: {
   const system = [
     '你是电商商品图“版式模板解析器”。',
     '输入：一张商品模板图片。',
-    '任务：识别版式结构并输出可用于前端编辑的区域列表 zones。',
+    '任务：识别版式结构并输出可用于前端编辑、可复用的区域列表 zones。',
     '要求：',
     '- 仅输出 JSON（不要解释、不要 Markdown、不要代码块）。',
     '- 坐标使用 bboxNormalized：x,y,w,h，均为 0~1，且 x+w<=1、y+h<=1。',
     '- zone.type 仅允许：background | main | prop。',
     '- 尽量包含 1 个 background（覆盖全画布）与 1 个 main（主体/主产品区域）。其余信息块/图标/标签/卖点/文字区域用 prop。',
     '- prompt 必须可执行：描述该区域应该生成/呈现什么。',
+    '- 模板需要可复用：不要把具体商品写死在 prompt 中。对于主商品/玩具/主体，请统一使用占位符 {PRODUCT}，让用户后续替换。',
+    '- 输出语言遵循 outputLanguage：zh 输出中文 prompt；en 输出英文 prompt；auto 则根据图片语言与品牌调性自动选择。',
+    '- 如果提供 productHint，请将其视为这张图的主商品（优先作为 product 输出），并用于判断 main 与 mainCandidates。',
     '- 若区域包含文字，请在 prompt 中写出“文字必须为：<原文>”，尽量保持原文（大小写/标点/换行尽量一致）。',
+    '- 你必须输出主体识别的置信度与理由：mainConfidence(0~1)、mainReason(一句话)。',
+    '- 如果你不确定主体，输出 mainCandidates（最多 3 个），每个包含 bboxNormalized/confidence/reason/product（product 可选，识别到的具体商品名）。',
     '输出 JSON 结构：',
-    '{"name":"可选模板名","zones":[{"type":"background","bboxNormalized":{"x":0,"y":0,"w":1,"h":1},"prompt":"...","zIndex":0}]}',
+    '{"name":"可选模板名","product":"识别到的具体商品名（用于默认替换，如：奶牛玩偶）","mainConfidence":0.83,"mainReason":"主体最大且居中","mainCandidates":[{"bboxNormalized":{"x":0.1,"y":0.2,"w":0.6,"h":0.6},"confidence":0.83,"reason":"最大且最清晰","product":"奶牛玩偶"}],"zones":[{"type":"background","bboxNormalized":{"x":0,"y":0,"w":1,"h":1},"prompt":"...","zIndex":0}]}',
   ].join('\n');
 
   const inlineData = await toInlineData(input.image, input.signal);
@@ -687,7 +730,10 @@ export async function parseSmartLayoutTemplateFromImage(input: {
             text: system,
           },
           {
-            text: `language=${input.language || 'zh'}`,
+            text: `outputLanguage=${input.outputLanguage || 'auto'}`,
+          },
+          {
+            text: `productHint=${(input.productHint || '').trim()}`,
           },
         ],
       },

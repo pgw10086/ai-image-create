@@ -42,7 +42,7 @@ function App() {
       <Sidebar />
 
       {/* Main Content */}
-      <main className={isSmartLayoutFocus ? "flex-1 ml-16 h-screen overflow-hidden" : "flex-1 ml-16"}>
+      <main className={isSmartLayoutFocus ? "flex-1 ml-16 h-screen overflow-auto" : "flex-1 ml-16"}>
         {/* Header */}
         {!isSmartLayoutFocus && <Header />}
 
@@ -51,7 +51,7 @@ function App() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.5 }}
-          className={isSmartLayoutFocus ? "w-full h-full" : "px-6 pb-8 w-full max-w-[1400px] mx-auto"}
+          className={isSmartLayoutFocus ? "w-full min-h-full" : "px-6 pb-8 w-full max-w-[1400px] mx-auto"}
         >
           {/* Main Tabs */}
           {!isSmartLayoutFocus && <MainTabs />}
@@ -59,8 +59,8 @@ function App() {
           {activeTab === 'smart_layout' ? (
             <>
               {!isSmartLayoutFocus ? <FeatureTags /> : null}
-              <div className={isSmartLayoutFocus ? "h-full" : "mt-6"}>
-                <SmartLayoutView className={isSmartLayoutFocus ? "h-full rounded-none border-0" : undefined} />
+              <div className={isSmartLayoutFocus ? "" : "mt-6"}>
+                <SmartLayoutView className={isSmartLayoutFocus ? "rounded-none border-0" : undefined} />
               </div>
             </>
           ) : (

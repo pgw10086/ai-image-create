@@ -33,7 +33,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Wand2, RotateCcw, Eye, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, SlidersHorizontal, Info, Save, FolderOpen, Upload, Download, Trash2, XCircle } from 'lucide-react';
+import { Wand2, RotateCcw, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, SlidersHorizontal, Info, Save, FolderOpen, Upload, Download, Trash2, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { enrichZonesForPrompt } from '@/lib/smartLayoutUtils';
 import { useAppStore } from '@/store/appStore';
@@ -65,6 +65,13 @@ type ResultHistoryEntry = {
   createdAt: number;
   slots: ResultSlot[];
   requestedImageCount: number;
+};
+
+type MainCandidate = {
+  bboxNormalized: { x: number; y: number; w: number; h: number };
+  confidence: number;
+  reason: string;
+  product?: string;
 };
 
 export function SmartLayoutView({ className }: { className?: string }) {
@@ -171,6 +178,32 @@ export function SmartLayoutView({ className }: { className?: string }) {
   const parseTemplateImageInputRef = useRef<HTMLInputElement>(null);
   const parseTemplateAbortRef = useRef<AbortController | null>(null);
   const [isParsingTemplate, setIsParsingTemplate] = useState(false);
+  const parseTemplateOptionsRef = useRef<{ outputLanguage: 'auto' | 'zh' | 'en'; productHint: string }>({
+    outputLanguage: 'auto',
+    productHint: '',
+  });
+  const [parseTemplateSettingsOpen, setParseTemplateSettingsOpen] = useState(false);
+  const [parseTemplateOutputLanguage, setParseTemplateOutputLanguage] = useState<'auto' | 'zh' | 'en'>(() => {
+    try {
+      const raw = localStorage.getItem('smart_layout_parse_output_language');
+      if (raw === 'zh' || raw === 'en' || raw === 'auto') return raw;
+      return 'auto';
+    } catch {
+      return 'auto';
+    }
+  });
+  const [parseTemplateProductHint, setParseTemplateProductHint] = useState(() => {
+    try {
+      return localStorage.getItem('smart_layout_parse_product_hint') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [mainConfirmOpen, setMainConfirmOpen] = useState(false);
+  const [mainCandidates, setMainCandidates] = useState<MainCandidate[]>([]);
+  const [mainConfidence, setMainConfidence] = useState<number | null>(null);
+  const [mainReason, setMainReason] = useState('');
+  const [pendingParsedTemplateName, setPendingParsedTemplateName] = useState<string | null>(null);
   const [draftOfferOpen, setDraftOfferOpen] = useState(false);
   const [draftExists, setDraftExists] = useState(() => {
     try {
@@ -206,6 +239,31 @@ export function SmartLayoutView({ className }: { className?: string }) {
       return;
     }
   }, [settings]);
+
+  const [productValue, setProductValue] = useState(() => {
+    try {
+      return localStorage.getItem('smart_layout_var_product') || '';
+    } catch {
+      return '';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('smart_layout_var_product', productValue);
+    } catch {
+      return;
+    }
+  }, [productValue]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('smart_layout_parse_output_language', parseTemplateOutputLanguage);
+      localStorage.setItem('smart_layout_parse_product_hint', parseTemplateProductHint);
+    } catch {
+      return;
+    }
+  }, [parseTemplateOutputLanguage, parseTemplateProductHint]);
 
   const assetsById = useMemo(() => new Map(smartLayoutAssets.map((a) => [a.id, a.dataUrl])), [smartLayoutAssets]);
   const getRefImageSrc = (z: LayoutZone) => (z.refImageId ? assetsById.get(z.refImageId) : z.refImage);
@@ -280,6 +338,28 @@ export function SmartLayoutView({ className }: { className?: string }) {
 
   const normalizedZones = useMemo(() => applyZoneEnrichment(zones), [zones, canvasSize.width, canvasSize.height]);
 
+  const resolvePromptVariables = (prompt: string) => {
+    const raw = (prompt || '').toString();
+    const product = (productValue || '').trim();
+    if (!raw.includes('{PRODUCT}')) return raw;
+    if (!product) return raw;
+    return raw.replaceAll('{PRODUCT}', product);
+  };
+
+  const requiresProductValue = useMemo(
+    () => normalizedZones.some((z) => (z.prompt || '').toString().includes('{PRODUCT}')),
+    [normalizedZones]
+  );
+
+  const resolvedNormalizedZones = useMemo(
+    () =>
+      normalizedZones.map((z) => ({
+        ...z,
+        prompt: resolvePromptVariables((z.prompt || '').toString()),
+      })),
+    [normalizedZones, productValue]
+  );
+
   const handleUpdateZonePrompts = (updates: Array<{ id: string; prompt: string }>) => {
     const byId = new Map(updates.map((u) => [u.id, u.prompt]));
     setZones((prev) =>
@@ -310,6 +390,10 @@ export function SmartLayoutView({ className }: { className?: string }) {
     }
 
     try {
+      if (requiresProductValue && !(productValue || '').trim()) {
+        toast.error('请先填写商品主体（用于替换 {PRODUCT}）');
+        return null;
+      }
       const modelId = resolveModelId(generationContext.model);
       if (isTaihaoProModel(modelId) && !hasGeminiApiKeyConfigured()) {
         toast.error('未配置 VITE_GOOGLE_API_KEY，无法使用泰豪生图1.0-pro');
@@ -362,7 +446,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
       const sizeHint = fixed ? fixedResolved.hint : smartHint;
 
       const generation = await composeLayoutForGeneration({
-        zones: normalizedZones,
+        zones: resolvedNormalizedZones,
         canvasSize,
         renderMode: settings.layoutSketchRenderMode,
         assets: smartLayoutAssets,
@@ -632,7 +716,8 @@ export function SmartLayoutView({ className }: { className?: string }) {
   };
 
   const shouldForwardHeightClass = Boolean(className && /(^|\s)h-/.test(className));
-  const rootHeightClass = shouldForwardHeightClass ? '' : 'h-[calc(100dvh-220px)]';
+  const rootHeightClass = shouldForwardHeightClass ? '' : 'min-h-[calc(100dvh-220px)]';
+  const rootHeightStyle = shouldForwardHeightClass ? undefined : { height: canvasSize.height + 120 };
   const activeHistoryEntry = useMemo(
     () => (activeResultId === 'current' ? null : resultHistory.find((entry) => entry.id === activeResultId) ?? null),
     [activeResultId, resultHistory]
@@ -850,7 +935,108 @@ export function SmartLayoutView({ className }: { className?: string }) {
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-  const handleParseTemplateImage = async (file: File) => {
+  const computeZoneBboxNormalized = (
+    zone: Pick<LayoutZone, 'x' | 'y' | 'width' | 'height'>,
+    size: { width: number; height: number }
+  ) => {
+    const w = Math.max(1, size.width);
+    const h = Math.max(1, size.height);
+    const x = zone.x / w;
+    const y = zone.y / h;
+    const ww = zone.width / w;
+    const hh = zone.height / h;
+    const clamp = (n: number) => Math.max(0, Math.min(1, n));
+    return { x: clamp(x), y: clamp(y), w: clamp(ww), h: clamp(hh) };
+  };
+
+  const iouNormalized = (
+    a: { x: number; y: number; w: number; h: number },
+    b: { x: number; y: number; w: number; h: number }
+  ) => {
+    const ax2 = a.x + a.w;
+    const ay2 = a.y + a.h;
+    const bx2 = b.x + b.w;
+    const by2 = b.y + b.h;
+    const ix1 = Math.max(a.x, b.x);
+    const iy1 = Math.max(a.y, b.y);
+    const ix2 = Math.min(ax2, bx2);
+    const iy2 = Math.min(ay2, by2);
+    const iw = Math.max(0, ix2 - ix1);
+    const ih = Math.max(0, iy2 - iy1);
+    const inter = iw * ih;
+    const areaA = Math.max(0, a.w) * Math.max(0, a.h);
+    const areaB = Math.max(0, b.w) * Math.max(0, b.h);
+    const union = areaA + areaB - inter;
+    if (union <= 0) return 0;
+    return inter / union;
+  };
+
+  const applyMainCandidate = (candidate: MainCandidate) => {
+    setZones((prev) => {
+      if (prev.length === 0) return prev;
+      let bestIndex = -1;
+      let bestScore = 0;
+      prev.forEach((z, idx) => {
+        const bb = computeZoneBboxNormalized(z, canvasSize);
+        const score = iouNormalized(candidate.bboxNormalized, bb);
+        if (score > bestScore) {
+          bestScore = score;
+          bestIndex = idx;
+        }
+      });
+
+      const existingMainIndex = prev.findIndex((z) => z.type === 'main');
+      const next: LayoutZone[] = prev.map((z, idx) => {
+        if (idx === bestIndex) {
+          return { ...z, type: 'main', semanticColor: SEMANTIC_COLORS.main, zIndex: 1 };
+        }
+        if (idx === existingMainIndex) {
+          return { ...z, type: 'prop', semanticColor: SEMANTIC_COLORS.prop, zIndex: Math.max(2, z.zIndex) };
+        }
+        return z;
+      }) as LayoutZone[];
+
+      if (bestIndex < 0 || bestScore < 0.08) {
+        const x = Math.round(candidate.bboxNormalized.x * canvasSize.width);
+        const y = Math.round(candidate.bboxNormalized.y * canvasSize.height);
+        const width = Math.round(candidate.bboxNormalized.w * canvasSize.width);
+        const height = Math.round(candidate.bboxNormalized.h * canvasSize.height);
+        next.push({
+          id: createId(),
+          x,
+          y,
+          width,
+          height,
+          zIndex: 1,
+          type: 'main',
+          semanticColor: SEMANTIC_COLORS.main,
+          prompt: '主商品 {PRODUCT}，清晰展示，符合该区域构图。',
+        } satisfies LayoutZone);
+      }
+
+      return applyZoneEnrichment(next);
+    });
+  };
+
+  const handleConfirmMainCandidate = (candidate: MainCandidate) => {
+    const product = (candidate.product || '').trim();
+    if (product && !(productValue || '').trim()) setProductValue(product);
+    applyMainCandidate(candidate);
+    setMainConfirmOpen(false);
+    setMainCandidates([]);
+    setMainConfidence(null);
+    setMainReason('');
+    if (pendingParsedTemplateName) {
+      openSaveTemplateDialog(pendingParsedTemplateName);
+      setPendingParsedTemplateName(null);
+    }
+    toast.success('已更新主体区域');
+  };
+
+  const handleParseTemplateImage = async (
+    file: File,
+    options?: { outputLanguage?: 'auto' | 'zh' | 'en'; productHint?: string }
+  ) => {
     if (!file.type.startsWith('image/')) {
       toast.error('请上传图片文件');
       return;
@@ -865,9 +1051,13 @@ export function SmartLayoutView({ className }: { className?: string }) {
     try {
       const dataUrl = await readFileAsDataUrl(file);
       const nextCanvasSize = await resolveImageNaturalSize(dataUrl);
+      const outputLanguage = options?.outputLanguage ?? 'auto';
+      const productHint = (options?.productHint || '').trim();
+      if (productHint && !(productValue || '').trim()) setProductValue(productHint);
       const parsed = await parseSmartLayoutTemplateFromImage({
         image: dataUrl,
-        language: generationContext.language || 'zh',
+        outputLanguage,
+        productHint,
         signal: controller.signal,
       });
 
@@ -906,10 +1096,22 @@ export function SmartLayoutView({ className }: { className?: string }) {
       setSelectedResultIndex(0);
       setResultOpen(false);
       if (!sidePanelOpen) setSidePanelOpen(true);
+      if (!(productValue || '').trim() && (parsed.product || '').trim()) setProductValue((parsed.product || '').trim());
+      setMainCandidates((parsed.mainCandidates || []) as MainCandidate[]);
+      setMainConfidence(typeof parsed.mainConfidence === 'number' ? parsed.mainConfidence : null);
+      setMainReason((parsed.mainReason || '').toString());
 
       toast.success('解析完成，已加载到画布');
       const fallbackName = `从图片解析 ${file.name.replace(/\.[^.]+$/, '')}`.trim();
-      openSaveTemplateDialog(parsed.name || fallbackName);
+      const shouldConfirmMain =
+        (parsed.mainCandidates || []).length > 0 &&
+        (typeof parsed.mainConfidence !== 'number' || parsed.mainConfidence < 0.8);
+      if (shouldConfirmMain) {
+        setPendingParsedTemplateName(parsed.name || fallbackName);
+        setMainConfirmOpen(true);
+      } else {
+        openSaveTemplateDialog(parsed.name || fallbackName);
+      }
     } catch (e: unknown) {
       if (controller.signal.aborted) {
         toast.message('已取消解析');
@@ -949,7 +1151,10 @@ export function SmartLayoutView({ className }: { className?: string }) {
         .filter(Boolean)
         .join(' ')}
     >
-      <div className={["relative w-full rounded-xl border border-white/10 bg-[#0a0a0f] overflow-hidden shadow-inner", rootHeightClass, className].filter(Boolean).join(' ')}>
+      <div
+        className={["relative w-full rounded-xl border border-white/10 bg-[#0a0a0f] overflow-hidden shadow-inner", rootHeightClass, className].filter(Boolean).join(' ')}
+        style={rootHeightStyle}
+      >
       <div className="absolute top-0 left-0 right-0 h-14 bg-[#14141a] border-b border-white/10 flex items-center justify-between px-4 z-10 shadow-sm">
         <div className="flex items-center gap-3">
           <span className="font-semibold text-white">智能布局画布</span>
@@ -958,7 +1163,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0 overflow-x-auto">
           <div className="flex items-center gap-2">
             <span className="text-xs text-white/60">画框模式</span>
             <Switch checked={drawMode} onCheckedChange={setDrawMode} />
@@ -972,90 +1177,145 @@ export function SmartLayoutView({ className }: { className?: string }) {
             </Tooltip>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Input
-              value={canvasWidthInput}
-              onChange={(e) => setCanvasWidthInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') applyCanvasSize();
-              }}
-              className="h-8 w-[84px] bg-white/5 border-white/10 text-white"
-              inputMode="numeric"
-              placeholder="W"
-            />
-            <span className="text-xs text-white/40">×</span>
-            <Input
-              value={canvasHeightInput}
-              onChange={(e) => setCanvasHeightInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') applyCanvasSize();
-              }}
-              className="h-8 w-[84px] bg-white/5 border-white/10 text-white"
-              inputMode="numeric"
-              placeholder="H"
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={applyCanvasSize}
-              className="h-8 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
-            >
-              应用
-            </Button>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 border-white/10 text-white/70 hover:text-white hover:bg-white/10">
+                <SlidersHorizontal className="mr-2 h-4 w-4" />
+                设置
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="bg-[#1c1c21] border-white/10 text-white w-[340px]">
+              <DropdownMenuLabel className="text-white/70">画布尺寸</DropdownMenuLabel>
+              <div className="px-2 pb-2">
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={canvasWidthInput}
+                    onChange={(e) => setCanvasWidthInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') applyCanvasSize();
+                    }}
+                    className="h-8 w-[96px] bg-white/5 border-white/10 text-white"
+                    inputMode="numeric"
+                    placeholder="W"
+                  />
+                  <span className="text-xs text-white/40">×</span>
+                  <Input
+                    value={canvasHeightInput}
+                    onChange={(e) => setCanvasHeightInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') applyCanvasSize();
+                    }}
+                    className="h-8 w-[96px] bg-white/5 border-white/10 text-white"
+                    inputMode="numeric"
+                    placeholder="H"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={applyCanvasSize}
+                    className="h-8 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+                  >
+                    应用
+                  </Button>
+                </div>
+              </div>
 
-          <div className="flex items-center gap-2">
-            <Select
-              value={settings.layoutSketchRenderMode}
-              onValueChange={(v) => setSettings(prev => ({ ...prev, layoutSketchRenderMode: v as SmartLayoutSettings['layoutSketchRenderMode'] }))}
-            >
-              <SelectTrigger className="h-8 w-[140px] bg-white/5 border-white/10 text-white">
-                <SelectValue placeholder="渲染风格" />
-              </SelectTrigger>
-              <SelectContent className="bg-[#1c1c21] border-white/10 text-white">
-                <SelectItem value="collage" className="focus:bg-white/10 focus:text-white">贴图布局图</SelectItem>
-                <SelectItem value="segmentation" className="focus:bg-white/10 focus:text-white">纯色布局图</SelectItem>
-              </SelectContent>
-            </Select>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-white/70">商品主体</DropdownMenuLabel>
+              <div className="px-2 pb-2">
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={productValue}
+                    onChange={(e) => setProductValue(e.target.value)}
+                    className="h-8 flex-1 bg-white/5 border-white/10 text-white"
+                    placeholder="用于替换 {PRODUCT}"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={!productValue.trim()}
+                    onClick={() => setProductValue('')}
+                    className="h-8 w-8 text-white/60 hover:text-white hover:bg-white/10 disabled:opacity-30"
+                  >
+                    <XCircle className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 border-white/10 text-white/70 hover:text-white hover:bg-white/10">
-                  <SlidersHorizontal className="mr-2 h-4 w-4" />
-                  高级
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="bg-[#1c1c21] border-white/10 text-white">
-                <DropdownMenuLabel className="text-white/70">显示与提示</DropdownMenuLabel>
-                <DropdownMenuCheckboxItem
-                  checked={sidePanelOpen}
-                  onCheckedChange={(checked) => setSidePanelOpen(Boolean(checked))}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-white/70">渲染风格</DropdownMenuLabel>
+              <div className="px-2 pb-2">
+                <Select
+                  value={settings.layoutSketchRenderMode}
+                  onValueChange={(v) => setSettings(prev => ({ ...prev, layoutSketchRenderMode: v as SmartLayoutSettings['layoutSketchRenderMode'] }))}
                 >
-                  右侧面板
-                </DropdownMenuCheckboxItem>
-                <DropdownMenuCheckboxItem
-                  checked={settings.showSketchPreviewWithImages}
-                  onCheckedChange={(checked) => setSettings(prev => ({ ...prev, showSketchPreviewWithImages: Boolean(checked) }))}
-                >
-                  预览贴图
-                </DropdownMenuCheckboxItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuLabel className="text-white/70">生成结构</DropdownMenuLabel>
-                <DropdownMenuCheckboxItem
-                  checked={settings.enableRegionPrompts}
-                  onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableRegionPrompts: Boolean(checked) }))}
-                >
-                  REGION 提示
-                </DropdownMenuCheckboxItem>
-                <DropdownMenuCheckboxItem
-                  checked={settings.enableDepthTree}
-                  onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableDepthTree: Boolean(checked) }))}
-                >
-                  DEPTH 树
-                </DropdownMenuCheckboxItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+                  <SelectTrigger className="h-8 w-full bg-white/5 border-white/10 text-white">
+                    <SelectValue placeholder="渲染风格" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1c1c21] border-white/10 text-white">
+                    <SelectItem value="collage" className="focus:bg-white/10 focus:text-white">贴图布局图</SelectItem>
+                    <SelectItem value="segmentation" className="focus:bg-white/10 focus:text-white">纯色布局图</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-white/70">显示与提示</DropdownMenuLabel>
+              <DropdownMenuCheckboxItem checked={sidePanelOpen} onCheckedChange={(checked) => setSidePanelOpen(Boolean(checked))}>
+                右侧面板
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={settings.showSketchPreviewWithImages}
+                onCheckedChange={(checked) => setSettings(prev => ({ ...prev, showSketchPreviewWithImages: Boolean(checked) }))}
+              >
+                预览贴图
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-white/70">生成结构</DropdownMenuLabel>
+              <DropdownMenuCheckboxItem
+                checked={settings.enableRegionPrompts}
+                onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableRegionPrompts: Boolean(checked) }))}
+              >
+                REGION 提示
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={settings.enableDepthTree}
+                onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableDepthTree: Boolean(checked) }))}
+              >
+                DEPTH 树
+              </DropdownMenuCheckboxItem>
+
+              {(resultSlots.length > 0 || resultHistory.length > 0) ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-white/70">历史记录</DropdownMenuLabel>
+                  <DropdownMenuItem
+                    disabled={resultSlots.length === 0}
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      setActiveResultId('current');
+                      setResultOpen(true);
+                    }}
+                  >
+                    当前结果
+                  </DropdownMenuItem>
+                  {resultHistory.length > 0 && <DropdownMenuSeparator />}
+                  {resultHistory.map((entry) => (
+                    <DropdownMenuItem
+                      key={entry.id}
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        setActiveResultId(entry.id);
+                        setResultOpen(true);
+                      }}
+                    >
+                      {new Date(entry.createdAt).toLocaleString()}
+                    </DropdownMenuItem>
+                  ))}
+                </>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -1077,7 +1337,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
                 disabled={isParsingTemplate || isGenerating}
                 onSelect={(e) => {
                   e.preventDefault();
-                  parseTemplateImageInputRef.current?.click();
+                  setParseTemplateSettingsOpen(true);
                 }}
               >
                 <Upload className="h-4 w-4" />
@@ -1131,42 +1391,6 @@ export function SmartLayoutView({ className }: { className?: string }) {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-
-          {(resultSlots.length > 0 || resultHistory.length > 0) && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="text-white/60 hover:text-white hover:bg-white/10">
-                  <Eye className="mr-2 h-4 w-4" />
-                  历史记录
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="bg-[#1c1c21] border-white/10 text-white min-w-[220px]">
-                <DropdownMenuItem
-                  disabled={resultSlots.length === 0}
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    setActiveResultId('current');
-                    setResultOpen(true);
-                  }}
-                >
-                  当前结果
-                </DropdownMenuItem>
-                {resultHistory.length > 0 && <DropdownMenuSeparator />}
-                {resultHistory.map((entry) => (
-                  <DropdownMenuItem
-                    key={entry.id}
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      setActiveResultId(entry.id);
-                      setResultOpen(true);
-                    }}
-                  >
-                    {new Date(entry.createdAt).toLocaleString()}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
 
           <Button
             variant="ghost"
@@ -1247,7 +1471,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
-          if (file) void handleParseTemplateImage(file);
+          if (file) void handleParseTemplateImage(file, parseTemplateOptionsRef.current);
         }}
       />
 
@@ -1351,6 +1575,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
                 <TabsContent value="desc" className="h-[calc(100%-56px)] mt-2 px-3 pb-3 overflow-auto">
                   <LayoutDescriptionPanel
                     zones={normalizedZones}
+                    previewZones={resolvedNormalizedZones}
                     settings={settings}
                     className="border-0 bg-transparent"
                     onUpdateZonePrompts={handleUpdateZonePrompts}
@@ -1667,6 +1892,123 @@ export function SmartLayoutView({ className }: { className?: string }) {
                </Button>
                <Button onClick={handleSaveTemplate} className="bg-violet-600 hover:bg-violet-700 text-white">
                  保存
+               </Button>
+             </div>
+           </div>
+         </DialogContent>
+       </Dialog>
+
+       <Dialog open={mainConfirmOpen} onOpenChange={setMainConfirmOpen}>
+         <DialogContent className="sm:max-w-[680px] bg-[#14141a] border-white/10 text-white">
+           <DialogHeader>
+             <DialogTitle>确认主体区域</DialogTitle>
+             <DialogDescription className="sr-only">选择主商品主体区域</DialogDescription>
+           </DialogHeader>
+           <div className="space-y-3">
+             <div className="text-sm text-white/70">
+               {typeof mainConfidence === 'number'
+                 ? `主体识别置信度：${Math.round(mainConfidence * 100)}%`
+                 : '主体识别置信度：未知'}
+             </div>
+             {(mainReason || '').trim() ? (
+               <div className="text-xs text-white/60">原因：{mainReason}</div>
+             ) : null}
+             <div className="text-xs text-white/60">请选择最符合“主商品主体”的候选区域（模型最多给出 3 个）。</div>
+             <div className="grid grid-cols-1 gap-2">
+               {mainCandidates.map((c, idx) => (
+                 <button
+                   key={`cand-${idx}`}
+                   type="button"
+                   onClick={() => handleConfirmMainCandidate(c)}
+                   className="w-full text-left rounded-md border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-2"
+                 >
+                   <div className="flex items-center justify-between gap-3">
+                     <div className="text-sm text-white/80 truncate">
+                       候选 {idx + 1}
+                       {c.product ? `：${c.product}` : ''}
+                     </div>
+                     <div className="text-xs text-white/60 shrink-0">{Math.round((c.confidence || 0) * 100)}%</div>
+                   </div>
+                   <div className="text-xs text-white/60 mt-1">{c.reason}</div>
+                 </button>
+               ))}
+             </div>
+             <div className="flex justify-end gap-2 pt-2">
+               <Button
+                 variant="outline"
+                 onClick={() => {
+                   setMainConfirmOpen(false);
+                   setMainCandidates([]);
+                   setMainConfidence(null);
+                   setMainReason('');
+                   if (pendingParsedTemplateName) {
+                     openSaveTemplateDialog(pendingParsedTemplateName);
+                     setPendingParsedTemplateName(null);
+                   }
+                 }}
+                 className="border-white/10 text-white/80 hover:text-white hover:bg-white/10"
+               >
+                 暂不处理
+               </Button>
+             </div>
+           </div>
+         </DialogContent>
+       </Dialog>
+
+       <Dialog open={parseTemplateSettingsOpen} onOpenChange={setParseTemplateSettingsOpen}>
+         <DialogContent className="sm:max-w-[520px] bg-[#14141a] border-white/10 text-white">
+           <DialogHeader>
+             <DialogTitle>解析模板设置</DialogTitle>
+             <DialogDescription className="sr-only">上传图片解析为布局模板的设置</DialogDescription>
+           </DialogHeader>
+           <div className="space-y-4">
+             <div>
+               <div className="text-xs text-white/70 mb-2">输出提示词语言</div>
+               <Select
+                 value={parseTemplateOutputLanguage}
+                 onValueChange={(v) => setParseTemplateOutputLanguage(v as any)}
+               >
+                 <SelectTrigger className="h-9 bg-white/5 border-white/10 text-white">
+                   <SelectValue placeholder="选择语言" />
+                 </SelectTrigger>
+                 <SelectContent className="bg-[#1c1c21] border-white/10 text-white">
+                   <SelectItem value="auto" className="focus:bg-white/10 focus:text-white">自动</SelectItem>
+                   <SelectItem value="zh" className="focus:bg-white/10 focus:text-white">中文</SelectItem>
+                   <SelectItem value="en" className="focus:bg-white/10 focus:text-white">英文</SelectItem>
+                 </SelectContent>
+               </Select>
+             </div>
+             <div>
+               <div className="text-xs text-white/70 mb-2">图片中的商品主体（可选）</div>
+               <Input
+                 value={parseTemplateProductHint}
+                 onChange={(e) => setParseTemplateProductHint(e.target.value)}
+                 className="h-9 bg-white/5 border-white/10 text-white"
+                 placeholder="例如：奶牛玩偶 / 积木玩具"
+               />
+               <div className="text-xs text-white/50 mt-2">填入后，模型会优先按该主体识别主区域并生成可复用模板。</div>
+             </div>
+             <div className="flex justify-end gap-2">
+               <Button
+                 variant="outline"
+                 onClick={() => setParseTemplateSettingsOpen(false)}
+                 className="border-white/10 text-white/80 hover:text-white hover:bg-white/10"
+               >
+                 取消
+               </Button>
+               <Button
+                 disabled={isParsingTemplate || isGenerating}
+                 onClick={() => {
+                   parseTemplateOptionsRef.current = {
+                     outputLanguage: parseTemplateOutputLanguage,
+                     productHint: parseTemplateProductHint,
+                   };
+                   setParseTemplateSettingsOpen(false);
+                   parseTemplateImageInputRef.current?.click();
+                 }}
+                 className="bg-violet-600 hover:bg-violet-700 text-white"
+               >
+                 选择图片并解析
                </Button>
              </div>
            </div>

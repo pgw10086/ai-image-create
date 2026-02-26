@@ -7,6 +7,7 @@ import { optimizeSmartLayoutZonePrompts } from '@/lib/bigmodel';
 
 interface LayoutDescriptionPanelProps {
   zones: LayoutZone[];
+  previewZones?: LayoutZone[];
   settings: SmartLayoutSettings;
   className?: string;
   onUpdateZonePrompts?: (updates: Array<{ id: string; prompt: string }>) => void;
@@ -43,6 +44,7 @@ function buildDepthTree(zones: LayoutZone[]) {
 
 export const LayoutDescriptionPanel: React.FC<LayoutDescriptionPanelProps> = ({
   zones,
+  previewZones,
   settings,
   className,
   onUpdateZonePrompts,
@@ -50,6 +52,7 @@ export const LayoutDescriptionPanel: React.FC<LayoutDescriptionPanelProps> = ({
   const [copied, setCopied] = useState(false);
   const [optimizing, setOptimizing] = useState(false);
   const [undoSnapshot, setUndoSnapshot] = useState<Record<string, string> | null>(null);
+  const viewZones = previewZones ?? zones;
 
   const text = useMemo(() => {
     const lines: string[] = [];
@@ -57,17 +60,17 @@ export const LayoutDescriptionPanel: React.FC<LayoutDescriptionPanelProps> = ({
     if (settings.enableRegionPrompts) {
       lines.push('');
       lines.push('REGION_PROMPTS:');
-      zones.forEach(z => lines.push(formatRegionLine(z)));
+      viewZones.forEach(z => lines.push(formatRegionLine(z)));
     }
     if (settings.enableDepthTree) {
       lines.push('');
       lines.push('DEPTH_TREE:');
-      lines.push(buildDepthTree(zones));
+      lines.push(buildDepthTree(viewZones));
     }
     lines.push('');
     lines.push('规则声明: 不要在最终图片里绘制边框/编号/文字；对象必须严格放在各自区域内。');
     return lines.join('\n');
-  }, [zones, settings.enableRegionPrompts, settings.enableDepthTree]);
+  }, [viewZones, settings.enableRegionPrompts, settings.enableDepthTree]);
 
   const handleCopy = async () => {
     try {
@@ -82,7 +85,7 @@ export const LayoutDescriptionPanel: React.FC<LayoutDescriptionPanelProps> = ({
   const detectLanguage = () => {
     let zh = 0;
     let en = 0;
-    for (const z of zones) {
+    for (const z of viewZones) {
       const p = (z.prompt || '').trim();
       if (!p) continue;
       if (hasChinese(p)) zh += 1;
