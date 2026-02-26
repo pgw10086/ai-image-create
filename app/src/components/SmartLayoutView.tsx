@@ -7,7 +7,7 @@ import { ConfigPanel } from './smart-layout/ConfigPanel';
 import { PreviewDialog } from './smart-layout/PreviewDialog';
 import { LayoutDescriptionPanel } from './smart-layout/LayoutDescriptionPanel';
 import { generateLayoutSketch, composeLayoutForGeneration } from '@/services/smartLayoutService';
-import { generateImage } from '@/lib/api';
+import { generateImage, parseSmartLayoutTemplateFromImage } from '@/lib/api';
 import {
   hasGeminiApiKeyConfigured,
   isTaihaoProModel,
@@ -168,6 +168,9 @@ export function SmartLayoutView({ className }: { className?: string }) {
   const [templateName, setTemplateName] = useState('');
   const [overwriteTemplateId, setOverwriteTemplateId] = useState<string>('new');
   const importInputRef = useRef<HTMLInputElement>(null);
+  const parseTemplateImageInputRef = useRef<HTMLInputElement>(null);
+  const parseTemplateAbortRef = useRef<AbortController | null>(null);
+  const [isParsingTemplate, setIsParsingTemplate] = useState(false);
   const [draftOfferOpen, setDraftOfferOpen] = useState(false);
   const [draftExists, setDraftExists] = useState(() => {
     try {
@@ -628,7 +631,8 @@ export function SmartLayoutView({ className }: { className?: string }) {
     }
   };
 
-  const rootHeightClass = className && /(^|\s)h-/.test(className) ? '' : 'h-[calc(100dvh-220px)]';
+  const shouldForwardHeightClass = Boolean(className && /(^|\s)h-/.test(className));
+  const rootHeightClass = shouldForwardHeightClass ? '' : 'h-[calc(100dvh-220px)]';
   const activeHistoryEntry = useMemo(
     () => (activeResultId === 'current' ? null : resultHistory.find((entry) => entry.id === activeResultId) ?? null),
     [activeResultId, resultHistory]
@@ -804,6 +808,122 @@ export function SmartLayoutView({ className }: { className?: string }) {
     }
   };
 
+  const openSaveTemplateDialog = (name: string) => {
+    setOverwriteTemplateId('new');
+    setTemplateName((name || '').trim() || `模板 ${new Date().toLocaleString()}`);
+    setSaveTemplateOpen(true);
+  };
+
+  const readFileAsDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const value = reader.result;
+        if (typeof value !== 'string' || !value.startsWith('data:')) {
+          reject(new Error('读取图片失败'));
+          return;
+        }
+        resolve(value);
+      };
+      reader.onerror = () => reject(reader.error ?? new Error('读取图片失败'));
+      reader.readAsDataURL(file);
+    });
+
+  const resolveImageNaturalSize = (dataUrl: string) =>
+    new Promise<{ width: number; height: number }>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const width = Number(img.naturalWidth) || 0;
+        const height = Number(img.naturalHeight) || 0;
+        if (width <= 0 || height <= 0) {
+          reject(new Error('无法读取图片尺寸'));
+          return;
+        }
+        resolve({ width, height });
+      };
+      img.onerror = () => reject(new Error('图片加载失败'));
+      img.src = dataUrl;
+    });
+
+  const createId = () =>
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  const handleParseTemplateImage = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('请上传图片文件');
+      return;
+    }
+    if (isParsingTemplate) return;
+
+    parseTemplateAbortRef.current?.abort();
+    const controller = new AbortController();
+    parseTemplateAbortRef.current = controller;
+    setIsParsingTemplate(true);
+
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      const nextCanvasSize = await resolveImageNaturalSize(dataUrl);
+      const parsed = await parseSmartLayoutTemplateFromImage({
+        image: dataUrl,
+        language: generationContext.language || 'zh',
+        signal: controller.signal,
+      });
+
+      const baseZones: LayoutZone[] = parsed.zones.map((z, idx) => {
+        const x = Math.round(z.bboxNormalized.x * nextCanvasSize.width);
+        const y = Math.round(z.bboxNormalized.y * nextCanvasSize.height);
+        const width = Math.round(z.bboxNormalized.w * nextCanvasSize.width);
+        const height = Math.round(z.bboxNormalized.h * nextCanvasSize.height);
+        const baseZIndex =
+          typeof z.zIndex === 'number'
+            ? z.zIndex
+            : z.type === 'background'
+              ? 0
+              : z.type === 'main'
+                ? 1
+                : 2 + idx;
+        return {
+          id: createId(),
+          x,
+          y,
+          width,
+          height,
+          zIndex: baseZIndex,
+          type: z.type,
+          semanticColor: SEMANTIC_COLORS[z.type],
+          prompt: z.prompt,
+        };
+      });
+
+      setCanvasSize(nextCanvasSize);
+      setZones(baseZones);
+      setSelectedZoneId(null);
+      canvasRef.current?.clearSelection();
+      setResultSlots([]);
+      setRequestedImageCount(1);
+      setSelectedResultIndex(0);
+      setResultOpen(false);
+      if (!sidePanelOpen) setSidePanelOpen(true);
+
+      toast.success('解析完成，已加载到画布');
+      const fallbackName = `从图片解析 ${file.name.replace(/\.[^.]+$/, '')}`.trim();
+      openSaveTemplateDialog(parsed.name || fallbackName);
+    } catch (e: unknown) {
+      if (controller.signal.aborted) {
+        toast.message('已取消解析');
+      } else {
+        const message = e instanceof Error ? e.message : '未知错误';
+        toast.error(`解析失败：${message}`);
+      }
+    } finally {
+      setIsParsingTemplate(false);
+      parseTemplateAbortRef.current = null;
+      if (parseTemplateImageInputRef.current) parseTemplateImageInputRef.current.value = '';
+    }
+  };
+
   const draftSaveTimerRef = useRef<number | null>(null);
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -824,7 +944,11 @@ export function SmartLayoutView({ className }: { className?: string }) {
   }, [zones.length, normalizedZones, canvasSize, settings, generationContext]);
 
   return (
-    <div className="w-full flex flex-col gap-3">
+    <div
+      className={['w-full flex flex-col gap-3', shouldForwardHeightClass ? 'h-full min-h-0' : undefined]
+        .filter(Boolean)
+        .join(' ')}
+    >
       <div className={["relative w-full rounded-xl border border-white/10 bg-[#0a0a0f] overflow-hidden shadow-inner", rootHeightClass, className].filter(Boolean).join(' ')}>
       <div className="absolute top-0 left-0 right-0 h-14 bg-[#14141a] border-b border-white/10 flex items-center justify-between px-4 z-10 shadow-sm">
         <div className="flex items-center gap-3">
@@ -948,6 +1072,16 @@ export function SmartLayoutView({ className }: { className?: string }) {
               <DropdownMenuItem onSelect={(e) => { e.preventDefault(); refreshTemplates(); setTemplatesOpen(true); }}>
                 <FolderOpen className="h-4 w-4" />
                 打开模板库
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={isParsingTemplate || isGenerating}
+                onSelect={(e) => {
+                  e.preventDefault();
+                  parseTemplateImageInputRef.current?.click();
+                }}
+              >
+                <Upload className="h-4 w-4" />
+                {isParsingTemplate ? '解析中...' : '从图片解析模板'}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -1103,6 +1237,17 @@ export function SmartLayoutView({ className }: { className?: string }) {
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file) void handleImportTemplates(file);
+        }}
+      />
+
+      <input
+        ref={parseTemplateImageInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleParseTemplateImage(file);
         }}
       />
 

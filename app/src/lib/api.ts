@@ -595,3 +595,121 @@ async function generateMockImage(params: GenerateImageParams): Promise<GenerateI
     },
   };
 }
+
+export type SmartLayoutTemplateImageParseZone = {
+  type: 'background' | 'main' | 'prop';
+  bboxNormalized: { x: number; y: number; w: number; h: number };
+  prompt: string;
+  zIndex?: number;
+};
+
+export type SmartLayoutTemplateImageParseResult = {
+  name?: string;
+  zones: SmartLayoutTemplateImageParseZone[];
+};
+
+function extractJsonCandidate(input: string) {
+  const start = input.indexOf('{');
+  const end = input.lastIndexOf('}');
+  if (start >= 0 && end > start) return input.slice(start, end + 1);
+  return input;
+}
+
+function clamp01(n: number) {
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(1, n));
+}
+
+function sanitizeBboxNormalized(input: any) {
+  const x = clamp01(Number(input?.x));
+  const y = clamp01(Number(input?.y));
+  const w = clamp01(Number(input?.w));
+  const h = clamp01(Number(input?.h));
+  const ww = Math.max(0.001, Math.min(1 - x, w));
+  const hh = Math.max(0.001, Math.min(1 - y, h));
+  return { x, y, w: ww, h: hh };
+}
+
+function parseSmartLayoutTemplateImageJson(input: string): SmartLayoutTemplateImageParseResult {
+  const trimmed = (input || '').trim();
+  const candidate = extractJsonCandidate(trimmed);
+  const parsed = JSON.parse(candidate) as any;
+  const zonesRaw = Array.isArray(parsed?.zones) ? parsed.zones : [];
+  const zones = zonesRaw
+    .map((z: any) => {
+      const type = (z?.type || '').trim();
+      if (type !== 'background' && type !== 'main' && type !== 'prop') return null;
+      const bboxNormalized = sanitizeBboxNormalized(z?.bboxNormalized);
+      const prompt = typeof z?.prompt === 'string' ? z.prompt.trim() : '';
+      if (!prompt) return null;
+      const zIndex = Number.isFinite(Number(z?.zIndex)) ? Number(z.zIndex) : undefined;
+      return { type, bboxNormalized, prompt, zIndex } satisfies SmartLayoutTemplateImageParseZone;
+    })
+    .filter(Boolean) as SmartLayoutTemplateImageParseZone[];
+  const name = typeof parsed?.name === 'string' ? parsed.name.trim() : undefined;
+  return { name, zones };
+}
+
+export async function parseSmartLayoutTemplateFromImage(input: {
+  image: string;
+  language?: 'zh' | 'en';
+  signal?: AbortSignal;
+}): Promise<SmartLayoutTemplateImageParseResult> {
+  const ai = getGeminiClient();
+  if (!ai) {
+    throw new Error('未配置 VITE_GOOGLE_API_KEY，无法解析模板图片');
+  }
+
+  const system = [
+    '你是电商商品图“版式模板解析器”。',
+    '输入：一张商品模板图片。',
+    '任务：识别版式结构并输出可用于前端编辑的区域列表 zones。',
+    '要求：',
+    '- 仅输出 JSON（不要解释、不要 Markdown、不要代码块）。',
+    '- 坐标使用 bboxNormalized：x,y,w,h，均为 0~1，且 x+w<=1、y+h<=1。',
+    '- zone.type 仅允许：background | main | prop。',
+    '- 尽量包含 1 个 background（覆盖全画布）与 1 个 main（主体/主产品区域）。其余信息块/图标/标签/卖点/文字区域用 prop。',
+    '- prompt 必须可执行：描述该区域应该生成/呈现什么。',
+    '- 若区域包含文字，请在 prompt 中写出“文字必须为：<原文>”，尽量保持原文（大小写/标点/换行尽量一致）。',
+    '输出 JSON 结构：',
+    '{"name":"可选模板名","zones":[{"type":"background","bboxNormalized":{"x":0,"y":0,"w":1,"h":1},"prompt":"...","zIndex":0}]}',
+  ].join('\n');
+
+  const inlineData = await toInlineData(input.image, input.signal);
+  const requestPayload = {
+    model: TAIHAO_PRO_MODEL_ID,
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { inlineData },
+          {
+            text: system,
+          },
+          {
+            text: `language=${input.language || 'zh'}`,
+          },
+        ],
+      },
+    ] as any,
+    config: {
+      responseModalities: ['TEXT'],
+      temperature: 0.2,
+    },
+  } as any;
+
+  const timeoutMs = Math.min(120000, resolveGenerationTimeoutMs({ model: TAIHAO_PRO_MODEL_ID } as any));
+  const response: any = await withTimeoutAndAbort(ai.models.generateContent(requestPayload), input.signal, timeoutMs);
+
+  const textFallback =
+    (typeof response?.text === 'string' ? response.text : '') ||
+    response?.candidates?.[0]?.content?.parts?.find?.((part: any) => part?.text)?.text ||
+    '';
+  const parsed = parseSmartLayoutTemplateImageJson(textFallback);
+
+  if (!parsed.zones || parsed.zones.length === 0) {
+    throw new Error('未解析到可用的 zones，请换一张更清晰的模板图或稍后重试');
+  }
+
+  return parsed;
+}
