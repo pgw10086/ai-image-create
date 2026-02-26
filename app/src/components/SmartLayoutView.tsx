@@ -17,7 +17,7 @@ import {
   resolveSizeFromRatioMode,
 } from '@/lib/generationContext';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -43,18 +43,28 @@ import {
   deleteSmartLayoutTemplate,
   downloadJsonFile,
   importSmartLayoutTemplatesFromJson,
+    loadSmartLayoutHistory,
   loadSmartLayoutTemplates,
   loadSmartLayoutDraft,
   saveSmartLayoutDraft,
+    saveSmartLayoutHistory,
   clearSmartLayoutDraft,
   upsertSmartLayoutTemplate,
 } from '@/lib/smartLayoutPersistence';
 import type { SmartLayoutTemplateV1 } from '@/types/smartLayout';
+import type { SmartLayoutHistoryRecord } from '@/lib/smartLayoutPersistence';
 
 type ResultSlot = {
   status: 'pending' | 'processing' | 'success' | 'failed' | 'cancelled';
   url?: string;
   error?: string;
+};
+
+type ResultHistoryEntry = {
+  id: string;
+  createdAt: number;
+  slots: ResultSlot[];
+  requestedImageCount: number;
 };
 
 export function SmartLayoutView({ className }: { className?: string }) {
@@ -130,9 +140,21 @@ export function SmartLayoutView({ className }: { className?: string }) {
   const [requestedImageCount, setRequestedImageCount] = useState(1);
   const [selectedResultIndex, setSelectedResultIndex] = useState(0);
   const [resultOpen, setResultOpen] = useState(false);
+  const [resultHistory, setResultHistory] = useState<ResultHistoryEntry[]>(() => {
+    try {
+      return loadSmartLayoutHistory();
+    } catch {
+      return [];
+    }
+  });
+  const [activeResultId, setActiveResultId] = useState('current');
   const [variantResults, setVariantResults] = useState<Array<{ style: string; url: string }>>([]);
   const [variantOpen, setVariantOpen] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    saveSmartLayoutHistory(resultHistory as SmartLayoutHistoryRecord[]);
+  }, [resultHistory]);
 
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
@@ -475,8 +497,21 @@ export function SmartLayoutView({ className }: { className?: string }) {
       const image = [data.generationSketch, ...data.referenceImages];
       const concurrencyLimit = 3;
 
+      if (resultSlots.length > 0) {
+        setResultHistory((prev) => {
+          const entry: ResultHistoryEntry = {
+            id: `history-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            createdAt: Date.now(),
+            slots: resultSlots,
+            requestedImageCount,
+          };
+          return [entry, ...prev].slice(0, 20);
+        });
+      }
+
       setRequestedImageCount(requestedCount);
       setSelectedResultIndex(0);
+      setActiveResultId('current');
       setResultSlots(Array.from({ length: requestedCount }, () => ({ status: 'pending' })));
       setResultOpen(true);
       setPreviewOpen(false);
@@ -594,12 +629,29 @@ export function SmartLayoutView({ className }: { className?: string }) {
   };
 
   const rootHeightClass = className && /(^|\s)h-/.test(className) ? '' : 'h-[calc(100dvh-220px)]';
-  const resultSuccessCount = useMemo(() => resultSlots.filter((s) => s.status === 'success').length, [resultSlots]);
+  const activeHistoryEntry = useMemo(
+    () => (activeResultId === 'current' ? null : resultHistory.find((entry) => entry.id === activeResultId) ?? null),
+    [activeResultId, resultHistory]
+  );
+  const displaySlots = activeHistoryEntry ? activeHistoryEntry.slots : resultSlots;
+  const displayRequestedImageCount = activeHistoryEntry ? activeHistoryEntry.requestedImageCount : requestedImageCount;
+  const resultSuccessCount = useMemo(
+    () => displaySlots.filter((s) => s.status === 'success').length,
+    [displaySlots]
+  );
   const selectedResult = useMemo(() => {
-    if (resultSlots.length === 0) return null;
-    const idx = Math.max(0, Math.min(selectedResultIndex, resultSlots.length - 1));
-    return resultSlots[idx] ?? null;
-  }, [resultSlots, selectedResultIndex]);
+    if (displaySlots.length === 0) return null;
+    const idx = Math.max(0, Math.min(selectedResultIndex, displaySlots.length - 1));
+    return displaySlots[idx] ?? null;
+  }, [displaySlots, selectedResultIndex]);
+  const currentResultPreviewUrl = useMemo(
+    () => resultSlots.find((s) => s.url)?.url,
+    [resultSlots]
+  );
+
+  useEffect(() => {
+    setSelectedResultIndex(0);
+  }, [activeResultId]);
 
   const refreshTemplates = () => {
     setTemplates(loadSmartLayoutTemplates());
@@ -772,7 +824,8 @@ export function SmartLayoutView({ className }: { className?: string }) {
   }, [zones.length, normalizedZones, canvasSize, settings, generationContext]);
 
   return (
-    <div className={["relative w-full rounded-xl border border-white/10 bg-[#0a0a0f] overflow-hidden shadow-inner", rootHeightClass, className].filter(Boolean).join(' ')}>
+    <div className="w-full flex flex-col gap-3">
+      <div className={["relative w-full rounded-xl border border-white/10 bg-[#0a0a0f] overflow-hidden shadow-inner", rootHeightClass, className].filter(Boolean).join(' ')}>
       <div className="absolute top-0 left-0 right-0 h-14 bg-[#14141a] border-b border-white/10 flex items-center justify-between px-4 z-10 shadow-sm">
         <div className="flex items-center gap-3">
           <span className="font-semibold text-white">智能布局画布</span>
@@ -945,16 +998,40 @@ export function SmartLayoutView({ className }: { className?: string }) {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {resultSlots.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setResultOpen(true)}
-              className="text-white/60 hover:text-white hover:bg-white/10"
-            >
-              <Eye className="mr-2 h-4 w-4" />
-              查看结果
-            </Button>
+          {(resultSlots.length > 0 || resultHistory.length > 0) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="text-white/60 hover:text-white hover:bg-white/10">
+                  <Eye className="mr-2 h-4 w-4" />
+                  历史记录
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="bg-[#1c1c21] border-white/10 text-white min-w-[220px]">
+                <DropdownMenuItem
+                  disabled={resultSlots.length === 0}
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setActiveResultId('current');
+                    setResultOpen(true);
+                  }}
+                >
+                  当前结果
+                </DropdownMenuItem>
+                {resultHistory.length > 0 && <DropdownMenuSeparator />}
+                {resultHistory.map((entry) => (
+                  <DropdownMenuItem
+                    key={entry.id}
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      setActiveResultId(entry.id);
+                      setResultOpen(true);
+                    }}
+                  >
+                    {new Date(entry.createdAt).toLocaleString()}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
 
           <Button
@@ -1029,138 +1106,193 @@ export function SmartLayoutView({ className }: { className?: string }) {
         }}
       />
 
-      <div className="absolute top-14 left-0 right-0 bottom-0 flex overflow-hidden bg-[#0a0a0f]">
-        <div className="flex-1 min-w-0 min-h-0 overflow-auto p-6">
-          <div className="min-w-max min-h-max flex items-center justify-center p-2">
-            <SmartCanvas
-              ref={canvasRef}
-              zones={zones}
-              onChange={(nextZones) => setZones(applyZoneEnrichment(nextZones))}
-              onSelect={(id) => {
-                setSelectedZoneId(id);
-                if (!sidePanelOpen) setSidePanelOpen(true);
-                setSidePanelTab('zone');
-              }}
-              canvasSize={canvasSize}
-              drawMode={drawMode}
-              getRefImageSrc={getRefImageSrc}
-            />
-          </div>
-        </div>
-
-        <div
-          className={[
-            'h-full bg-[#14141a] border-l border-white/10',
-            sidePanelOpen ? 'w-[360px]' : 'w-12',
-          ].join(' ')}
-        >
-          <div className="h-12 px-2 flex items-center justify-between border-b border-white/10">
-            <div className="flex items-center gap-2 overflow-hidden">
-              {sidePanelOpen && <span className="text-sm font-medium text-white/80 truncate">面板</span>}
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setSidePanelOpen((v) => !v)}
-              className="h-8 w-8 text-white/60 hover:text-white hover:bg-white/10"
-            >
-              {sidePanelOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
-            </Button>
-          </div>
-
-          {sidePanelOpen ? (
-            <Tabs value={sidePanelTab} onValueChange={(v) => setSidePanelTab(v as 'zone' | 'desc')} className="h-[calc(100%-48px)]">
-              <div className="px-2 pt-2">
-                <TabsList className="w-full bg-white/5">
-                  <TabsTrigger value="zone" className="flex-1">区域</TabsTrigger>
-                  <TabsTrigger value="desc" className="flex-1">布局描述</TabsTrigger>
-                </TabsList>
-              </div>
-
-              <TabsContent value="zone" className="h-[calc(100%-56px)] mt-2 px-0">
-                {selectedZone ? (
-                  <ConfigPanel
-                    layout="inline"
-                    className="bg-transparent"
-                    zone={selectedZone}
-                    onChange={handleZoneUpdate}
-                    canvasSize={canvasSize}
-                    assets={smartLayoutAssets}
-                    onAddAsset={addSmartLayoutAsset}
-                    onClose={() => {
-                      setSelectedZoneId(null);
-                      canvasRef.current?.clearSelection();
-                    }}
-                    onDelete={handleDeleteZone}
-                    allZones={zones}
-                    onAutoGenerateDepthTree={autoGenerateDepthTree}
-                  />
-                ) : (
-                  <div className="p-4">
-                    <div className="text-sm text-white/70">未选中区域</div>
-                    <div className="mt-3 space-y-2">
-                      {zones.length === 0 ? (
-                        <div className="text-xs text-white/50">在画布上拖拽绘制区域</div>
-                      ) : (
-                        [...zones]
-                          .sort((a, b) => a.zIndex - b.zIndex)
-                          .map((z) => (
-                            <button
-                              key={z.id}
-                              type="button"
-                              onClick={() => setSelectedZoneId(z.id)}
-                              className="w-full text-left rounded-md border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-2"
-                            >
-                              <div className="flex items-center justify-between gap-3">
-                                <span className="text-xs text-white/80 truncate">
-                                  {(z.prompt || '').trim() ? (z.prompt || '').trim() : (z.type === 'background' ? '背景' : z.type === 'prop' ? '道具' : '主体')}
-                                </span>
-                                <span className="text-[10px] text-white/50 shrink-0">z={z.zIndex}</span>
-                              </div>
-                            </button>
-                          ))
-                      )}
-                    </div>
-                  </div>
-                )}
-              </TabsContent>
-
-              <TabsContent value="desc" className="h-[calc(100%-56px)] mt-2 px-3 pb-3 overflow-auto">
-                <LayoutDescriptionPanel
-                  zones={normalizedZones}
-                  settings={settings}
-                  className="border-0 bg-transparent"
-                  onUpdateZonePrompts={handleUpdateZonePrompts}
-                />
-              </TabsContent>
-            </Tabs>
-          ) : (
-            <div className="h-[calc(100%-48px)] flex flex-col items-center gap-2 pt-3">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => {
-                  setSidePanelOpen(true);
+      <div className="absolute top-14 left-0 right-0 bottom-0 overflow-hidden bg-[#0a0a0f]">
+        <div className="h-full flex overflow-hidden">
+          <div className="flex-1 min-w-0 min-h-0 overflow-auto p-6">
+            <div className="min-w-max min-h-max flex items-center justify-center p-2">
+              <SmartCanvas
+                ref={canvasRef}
+                zones={zones}
+                onChange={(nextZones) => setZones(applyZoneEnrichment(nextZones))}
+                onSelect={(id) => {
+                  setSelectedZoneId(id);
+                  if (!sidePanelOpen) setSidePanelOpen(true);
                   setSidePanelTab('zone');
                 }}
-                className="h-10 w-10 text-white/60 hover:text-white hover:bg-white/10"
-              >
-                区
-              </Button>
+                canvasSize={canvasSize}
+                drawMode={drawMode}
+                getRefImageSrc={getRefImageSrc}
+              />
+            </div>
+          </div>
+
+          <div
+            className={[
+              'h-full bg-[#14141a] border-l border-white/10',
+              sidePanelOpen ? 'w-[360px]' : 'w-12',
+            ].join(' ')}
+          >
+            <div className="h-12 px-2 flex items-center justify-between border-b border-white/10">
+              <div className="flex items-center gap-2 overflow-hidden">
+                {sidePanelOpen && <span className="text-sm font-medium text-white/80 truncate">面板</span>}
+              </div>
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => {
-                  setSidePanelOpen(true);
-                  setSidePanelTab('desc');
-                }}
-                className="h-10 w-10 text-white/60 hover:text-white hover:bg-white/10"
+                onClick={() => setSidePanelOpen((v) => !v)}
+                className="h-8 w-8 text-white/60 hover:text-white hover:bg-white/10"
               >
-                描
+                {sidePanelOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
               </Button>
             </div>
-          )}
+
+            {sidePanelOpen ? (
+              <Tabs value={sidePanelTab} onValueChange={(v) => setSidePanelTab(v as 'zone' | 'desc')} className="h-[calc(100%-48px)]">
+                <div className="px-2 pt-2">
+                  <TabsList className="w-full bg-white/5">
+                    <TabsTrigger value="zone" className="flex-1">区域</TabsTrigger>
+                    <TabsTrigger value="desc" className="flex-1">布局描述</TabsTrigger>
+                  </TabsList>
+                </div>
+
+                <TabsContent value="zone" className="h-[calc(100%-56px)] mt-2 px-0">
+                  {selectedZone ? (
+                    <ConfigPanel
+                      layout="inline"
+                      className="bg-transparent"
+                      zone={selectedZone}
+                      onChange={handleZoneUpdate}
+                      canvasSize={canvasSize}
+                      assets={smartLayoutAssets}
+                      onAddAsset={addSmartLayoutAsset}
+                      onClose={() => {
+                        setSelectedZoneId(null);
+                        canvasRef.current?.clearSelection();
+                      }}
+                      onDelete={handleDeleteZone}
+                      allZones={zones}
+                      onAutoGenerateDepthTree={autoGenerateDepthTree}
+                    />
+                  ) : (
+                    <div className="p-4">
+                      <div className="text-sm text-white/70">未选中区域</div>
+                      <div className="mt-3 space-y-2">
+                        {zones.length === 0 ? (
+                          <div className="text-xs text-white/50">在画布上拖拽绘制区域</div>
+                        ) : (
+                          [...zones]
+                            .sort((a, b) => a.zIndex - b.zIndex)
+                            .map((z) => (
+                              <button
+                                key={z.id}
+                                type="button"
+                                onClick={() => setSelectedZoneId(z.id)}
+                                className="w-full text-left rounded-md border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-2"
+                              >
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="text-xs text-white/80 truncate">
+                                    {(z.prompt || '').trim() ? (z.prompt || '').trim() : (z.type === 'background' ? '背景' : z.type === 'prop' ? '道具' : '主体')}
+                                  </span>
+                                  <span className="text-[10px] text-white/50 shrink-0">z={z.zIndex}</span>
+                                </div>
+                              </button>
+                            ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="desc" className="h-[calc(100%-56px)] mt-2 px-3 pb-3 overflow-auto">
+                  <LayoutDescriptionPanel
+                    zones={normalizedZones}
+                    settings={settings}
+                    className="border-0 bg-transparent"
+                    onUpdateZonePrompts={handleUpdateZonePrompts}
+                  />
+                </TabsContent>
+              </Tabs>
+            ) : (
+              <div className="h-[calc(100%-48px)] flex flex-col items-center gap-2 pt-3">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    setSidePanelOpen(true);
+                    setSidePanelTab('zone');
+                  }}
+                  className="h-10 w-10 text-white/60 hover:text-white hover:bg-white/10"
+                >
+                  区
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    setSidePanelOpen(true);
+                    setSidePanelTab('desc');
+                  }}
+                  className="h-10 w-10 text-white/60 hover:text-white hover:bg-white/10"
+                >
+                  描
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
+      </div>
+      </div>
+
+      <div className="w-full rounded-xl border border-white/10 bg-[#111116] px-4 py-4">
+        <div className="text-xs text-white/60 mb-3">生成历史记录</div>
+        {resultHistory.length === 0 && resultSlots.length === 0 ? (
+          <div className="text-xs text-white/40">暂无历史记录</div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {resultSlots.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveResultId('current');
+                  setResultOpen(true);
+                }}
+                className="rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 p-3 text-left"
+              >
+                <div className="text-xs text-white/70 mb-2">当前结果</div>
+                <div className="aspect-[4/3] rounded-md overflow-hidden border border-white/10 bg-black/20 flex items-center justify-center">
+                  {currentResultPreviewUrl ? (
+                    <img src={currentResultPreviewUrl} alt="当前结果预览" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-[11px] text-white/50">暂无成功图</span>
+                  )}
+                </div>
+              </button>
+            )}
+            {resultHistory.map((entry) => {
+              const previewUrl = entry.slots.find((s) => s.url)?.url;
+              return (
+                <button
+                  key={entry.id}
+                  type="button"
+                  onClick={() => {
+                    setActiveResultId(entry.id);
+                    setResultOpen(true);
+                  }}
+                  className="rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 p-3 text-left"
+                >
+                  <div className="text-xs text-white/70 mb-2">{new Date(entry.createdAt).toLocaleString()}</div>
+                  <div className="aspect-[4/3] rounded-md overflow-hidden border border-white/10 bg-black/20 flex items-center justify-center">
+                    {previewUrl ? (
+                      <img src={previewUrl} alt="历史记录预览" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-[11px] text-white/50">暂无成功图</span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
        {/* Preview Dialog */}
@@ -1200,12 +1332,15 @@ export function SmartLayoutView({ className }: { className?: string }) {
            <DialogHeader>
              <DialogTitle>
                <div className="flex items-center gap-2">
-                 <span>生成结果（{resultSuccessCount}/{requestedImageCount}）</span>
+                 <span>{activeResultId === 'current' ? '生成结果' : '历史结果'}（{resultSuccessCount}/{displayRequestedImageCount}）</span>
                  {isGenerating ? <Spinner className="size-4 text-white/60" /> : null}
                </div>
              </DialogTitle>
+             <DialogDescription className="sr-only">
+               查看智能布局生成的图片结果与历史记录
+             </DialogDescription>
            </DialogHeader>
-           {resultSlots.length > 0 ? (
+           {displaySlots.length > 0 ? (
              <div className="w-full">
                <div className="w-full flex items-center justify-center">
                  {selectedResult?.status === 'success' && selectedResult.url ? (
@@ -1224,9 +1359,9 @@ export function SmartLayoutView({ className }: { className?: string }) {
                    </div>
                  )}
                </div>
-               {resultSlots.length > 1 ? (
+              {displaySlots.length > 1 ? (
                  <div className="mt-4 grid grid-cols-4 sm:grid-cols-6 gap-2">
-                   {resultSlots.map((slot, idx) => (
+                  {displaySlots.map((slot, idx) => (
                      <button
                        key={`${slot.url || slot.status}-${idx}`}
                        type="button"
@@ -1252,19 +1387,53 @@ export function SmartLayoutView({ className }: { className?: string }) {
                      </button>
                    ))}
                  </div>
-               ) : null}
+              ) : null}
              </div>
            ) : (
              <div className="text-white/60 text-sm">暂无结果</div>
            )}
+          {resultHistory.length > 0 && (
+            <div className="border-t border-white/10 px-4 py-3">
+              <div className="text-xs text-white/60 mb-2">历史记录</div>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {[{ id: 'current', label: '当前结果', slots: resultSlots }, ...resultHistory.map((entry) => ({
+                  id: entry.id,
+                  label: new Date(entry.createdAt).toLocaleString(),
+                  slots: entry.slots,
+                }))].map((entry) => {
+                  const previewUrl = entry.slots.find((s) => s.url)?.url;
+                  return (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      onClick={() => setActiveResultId(entry.id)}
+                      className={[
+                        'w-24 h-16 rounded-md border overflow-hidden flex-shrink-0 bg-white/5',
+                        activeResultId === entry.id ? 'border-violet-400/70' : 'border-white/10 hover:border-white/30',
+                      ].join(' ')}
+                    >
+                      {previewUrl ? (
+                        <img src={previewUrl} alt={entry.label} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-[10px] text-white/50 px-1 text-center">
+                          暂无成功图
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
          </DialogContent>
        </Dialog>
 
        <Dialog open={variantOpen} onOpenChange={setVariantOpen}>
          <DialogContent className="sm:max-w-[1100px] bg-[#14141a] border-white/10 text-white">
-           <DialogHeader>
-             <DialogTitle>风格变体结果</DialogTitle>
-           </DialogHeader>
+          <DialogHeader>
+            <DialogTitle>风格变体结果</DialogTitle>
+            <DialogDescription className="sr-only">查看智能布局的风格变体结果</DialogDescription>
+          </DialogHeader>
            {variantResults.length > 0 ? (
              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                {variantResults.map((r, idx) => (
@@ -1284,9 +1453,10 @@ export function SmartLayoutView({ className }: { className?: string }) {
 
        <Dialog open={draftOfferOpen} onOpenChange={setDraftOfferOpen}>
          <DialogContent className="sm:max-w-[520px] bg-[#14141a] border-white/10 text-white">
-           <DialogHeader>
-             <DialogTitle>检测到草稿</DialogTitle>
-           </DialogHeader>
+          <DialogHeader>
+            <DialogTitle>检测到草稿</DialogTitle>
+            <DialogDescription className="sr-only">检测到未清理的智能布局草稿</DialogDescription>
+          </DialogHeader>
            <div className="text-sm text-white/70">
              {pendingDraftUpdatedAt ? `上次保存：${new Date(pendingDraftUpdatedAt).toLocaleString()}` : '存在未清理的草稿，是否恢复？'}
            </div>
@@ -1312,9 +1482,10 @@ export function SmartLayoutView({ className }: { className?: string }) {
 
        <Dialog open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen}>
          <DialogContent className="sm:max-w-[560px] bg-[#14141a] border-white/10 text-white">
-           <DialogHeader>
-             <DialogTitle>保存为模板</DialogTitle>
-           </DialogHeader>
+          <DialogHeader>
+            <DialogTitle>保存为模板</DialogTitle>
+            <DialogDescription className="sr-only">将当前智能布局保存为模板</DialogDescription>
+          </DialogHeader>
            <div className="space-y-4">
              <div>
                <div className="text-xs text-white/70 mb-2">模板名称</div>
@@ -1361,6 +1532,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
         <DialogContent className="sm:max-w-[980px] max-h-[85vh] overflow-y-auto bg-[#14141a] border-white/10 text-white">
            <DialogHeader>
              <DialogTitle>模板库</DialogTitle>
+             <DialogDescription className="sr-only">查看与管理智能布局模板</DialogDescription>
            </DialogHeader>
            <div className="flex items-center justify-between gap-2">
              <div className="text-xs text-white/60">共 {templates.length} 个</div>

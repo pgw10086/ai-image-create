@@ -19,7 +19,7 @@ import { useImageUploadPicker } from '@/hooks/useImageUploadPicker';
 import { getSuiteShotById } from '@/constants/suiteShots';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -1355,9 +1355,10 @@ export function SuiteGeneratorView() {
 
           <Dialog open={customShotDialogOpen} onOpenChange={setCustomShotDialogOpen}>
             <DialogContent>
-              <DialogHeader>
-                <DialogTitle>自定义镜头</DialogTitle>
-              </DialogHeader>
+            <DialogHeader>
+              <DialogTitle>自定义镜头</DialogTitle>
+              <DialogDescription className="sr-only">创建并添加自定义套图镜头</DialogDescription>
+            </DialogHeader>
 
               <div className="space-y-3">
                 <div className="space-y-1">

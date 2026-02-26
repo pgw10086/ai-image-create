@@ -4,6 +4,18 @@ import type { SmartLayoutDraftV1, SmartLayoutTemplateV1 } from '@/types/smartLay
 const TEMPLATES_KEY = 'smart_layout_templates_v1';
 const DRAFT_KEY = 'smart_layout_draft_v1';
 const DEFAULT_TEMPLATES_IMPORTED_KEY = 'smart_layout_default_templates_imported_v1';
+const HISTORY_KEY = 'smart_layout_history_v1';
+
+export type SmartLayoutHistoryRecord = {
+  id: string;
+  createdAt: number;
+  slots: Array<{
+    status: 'pending' | 'processing' | 'success' | 'failed' | 'cancelled';
+    url?: string;
+    error?: string;
+  }>;
+  requestedImageCount: number;
+};
 
 function safeParseJson<T>(raw: string | null): T | null {
   if (!raw) return null;
@@ -113,6 +125,36 @@ export function clearSmartLayoutDraft() {
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    return;
+  }
+}
+
+export function loadSmartLayoutHistory(): SmartLayoutHistoryRecord[] {
+  if (typeof window === 'undefined') return [];
+  const parsed = safeParseJson<unknown>(window.localStorage.getItem(HISTORY_KEY));
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .filter((entry) => {
+      if (!isRecord(entry)) return false;
+      const id = entry.id;
+      const createdAt = entry.createdAt;
+      const slots = entry.slots;
+      const requestedImageCount = entry.requestedImageCount;
+      return (
+        typeof id === 'string' &&
+        typeof createdAt === 'number' &&
+        Array.isArray(slots) &&
+        typeof requestedImageCount === 'number'
+      );
+    })
+    .slice(0, 20) as SmartLayoutHistoryRecord[];
+}
+
+export function saveSmartLayoutHistory(next: SmartLayoutHistoryRecord[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(HISTORY_KEY, safeStringifyJson(next.slice(0, 20)));
   } catch {
     return;
   }

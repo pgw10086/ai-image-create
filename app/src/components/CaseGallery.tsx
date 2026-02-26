@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { Download, Sparkles, Wand2 } from 'lucide-react';
 import { useState } from 'react';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/store/appStore';
 import type { GenerationTask } from '@/store/appStore';
@@ -213,7 +213,10 @@ export function CaseGallery() {
               </div>
 
               <div className="p-6 flex flex-col min-w-0 overflow-y-auto">
-                <h3 className="text-xl font-semibold text-white mb-2 pr-8 leading-tight">{selectedTemplate.title}</h3>
+                <DialogTitle className="text-xl font-semibold text-white mb-2 pr-8 leading-tight">
+                  {selectedTemplate.title}
+                </DialogTitle>
+                <DialogDescription className="sr-only">查看模板详情并执行相关操作</DialogDescription>
                 <p className="text-white/60 text-sm mb-4 leading-6">{selectedTemplate.description}</p>
 
                 <div className="flex flex-wrap gap-2 mb-6">

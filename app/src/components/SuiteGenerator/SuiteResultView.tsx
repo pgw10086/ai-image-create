@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight, Clock, Download, RefreshCcw } from 'lucide-r
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useAppStore } from '@/store/appStore';
 import type { GenerationTask } from '@/store/appStore';
 import type { SuiteGenerationResult, SuiteItemResult } from '@/types/suite';
@@ -302,6 +302,7 @@ export function SuiteResultView() {
                     </Button>
                   </div>
                 </div>
+                <DialogDescription className="sr-only">查看套图生成结果的大图预览</DialogDescription>
               </DialogHeader>
 
               <div className="relative bg-black/70 px-4 py-4 sm:px-8">
