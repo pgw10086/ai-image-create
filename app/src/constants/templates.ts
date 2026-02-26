@@ -82,15 +82,6 @@ export const suiteTemplates: SuiteTemplate[] = [
     defaultShotIds: ['feature-callout', 'comparison', 'usage-step', 'detail'],
   },
   {
-    id: 'suite-lifestyle-conversion',
-    name: '生活方式转化组',
-    description: '以场景种草为主：真实使用、手持尺度、前后变化、细节质感。',
-    coverImage:
-      createMockImageDataUri({ title: '生活方式转化组', subtitle: '海外电商模板', width: 1200, height: 675 }),
-    availableShotIds: ['scene', 'in-hand', 'scale-reference', 'before-after', 'detail', 'angle45'],
-    defaultShotIds: ['scene', 'in-hand', 'before-after', 'detail'],
-  },
-  {
     id: 'suite-brand-kv',
     name: '品牌视觉套图',
     description: '适合品牌统一风格：质感主图 + KV 场景 + 材质细节。',
