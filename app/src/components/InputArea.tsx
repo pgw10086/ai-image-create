@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Plus, Sparkles, Send, X, Loader2 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createEditor, Editor, Element as SlateElement, Text, Transforms } from 'slate';
 import type { Descendant, Node as SlateNode } from 'slate';
 import { Editable, ReactEditor, Slate, useFocused, useSelected, useSlateStatic, withReact } from 'slate-react';
@@ -9,7 +9,7 @@ import { withHistory } from 'slate-history';
 import type { HistoryEditor } from 'slate-history';
 import { useAppStore } from '@/store/appStore';
 import type { GenerationTask } from '@/store/appStore';
-import { generateImage } from '@/lib/api';
+import { generateImage, parseTemplateVariablesFromImage } from '@/lib/api';
 import { polishFreeGenerationPrompt } from '@/lib/bigmodel';
 import {
   buildPromptWithContext,
@@ -31,6 +31,7 @@ type TemplateEditor = Editor & ReactEditor & HistoryEditor;
 type VariableTemplatePreset = 'bow-detail' | 'hair-organizer';
 
 type TemplateVariableKey =
+  | 'productSubject'
   | 'productName'
   | 'styleTone'
   | 'lightingStyle'
@@ -68,6 +69,7 @@ type TemplateVariableDef = {
 };
 
 const BOW_TEMPLATE_VARIABLES: TemplateVariableDef[] = [
+  { key: 'productSubject', label: '海报主题词', defaultValue: '蝴蝶结', placeholder: '请输入海报主题词' },
   { key: 'productName', label: '产品描述', defaultValue: '粉蓝配色蝴蝶结挂旗', placeholder: '请输入产品描述' },
   { key: 'styleTone', label: '整体风格', defaultValue: '清新轻奢、少女感但不幼稚', placeholder: '请输入整体风格' },
   { key: 'lightingStyle', label: '摄影光线', defaultValue: '柔和漫射日光', placeholder: '请输入摄影光线' },
@@ -179,7 +181,7 @@ function createParagraph(
 
 function createBowTemplateDocument(variableMap: Record<TemplateVariableKey, TemplateVariableDef>): Descendant[] {
   return [
-    createParagraph(['生成一张蝴蝶结商品详情海报，竖版 3:4，产品为', { key: 'productName' }, '。'], variableMap),
+    createParagraph(['生成一张', { key: 'productSubject' }, '商品详情海报，竖版 3:4，产品为', { key: 'productName' }, '。'], variableMap),
     createParagraph(['整体风格：', { key: 'styleTone' }, '，画面干净明亮。'], variableMap),
     createParagraph(['色彩方案：', { key: 'colorPalette' }, '。'], variableMap),
     createParagraph(['构图与版式：'], variableMap),
@@ -345,6 +347,10 @@ export function InputArea() {
 
   const [isFocused, setIsFocused] = useState(false);
   const [isPolishing, setIsPolishing] = useState(false);
+  const [isTemplateAnalyzing, setIsTemplateAnalyzing] = useState(false);
+  const lastAnalyzedImageKeyRef = useRef('');
+  const lastAnalyzeSucceededRef = useRef(false);
+  const analyzeRequestSeqRef = useRef(0);
   const [editor] = useState<TemplateEditor>(() =>
     withTemplateVariables(withReact(withHistory(createEditor())) as TemplateEditor)
   );
@@ -396,7 +402,117 @@ export function InputArea() {
     return compiled;
   }, [compileTemplatePrompt, editor, inputTemplatePreset, inputValue, setInputValue]);
 
+  const collectTemplateVariableValues = useCallback((nodes: Descendant[]) => {
+    const values: Record<string, string> = {};
+    const walk = (node: SlateNode) => {
+      if (!SlateElement.isElement(node)) return;
+      const elementNode = node as SlateElement;
+      if (isTemplateVariableElement(elementNode)) {
+        values[elementNode.key] = (elementNode.value ?? '').trim();
+        return;
+      }
+      elementNode.children.forEach((child) => walk(child as SlateNode));
+    };
+    nodes.forEach((node) => walk(node as SlateNode));
+    return values;
+  }, []);
+
+  const applyTemplateVariableValues = useCallback(
+    (variables: Record<string, string>) => {
+      let changed = 0;
+      const entries = Array.from(
+        Editor.nodes(editor, {
+          at: [],
+          match: (node) => SlateElement.isElement(node) && isTemplateVariableElement(node as SlateElement),
+        })
+      ) as Array<[SlateNode, number[]]>;
+
+      if (entries.length === 0) return 0;
+
+      Editor.withoutNormalizing(editor, () => {
+        for (const [node, path] of entries) {
+          const elementNode = node as TemplateVariableElementNode;
+          const nextRaw = variables[elementNode.key];
+          if (typeof nextRaw !== 'string') continue;
+          const nextValue = nextRaw.trim();
+          if (!nextValue || nextValue === elementNode.value) continue;
+          Transforms.setNodes(editor, { value: nextValue } as Partial<TemplateVariableElementNode>, { at: path });
+          changed += 1;
+        }
+      });
+
+      return changed;
+    },
+    [editor]
+  );
+
+  const getTemplateAnalyzeKey = useCallback(() => {
+    if (!isVariableTemplatePreset(inputTemplatePreset)) return '';
+    const firstImage = uploadedImages[0]?.url ?? '';
+    if (!firstImage) return '';
+    return `${inputTemplatePreset}::${firstImage}`;
+  }, [inputTemplatePreset, uploadedImages]);
+
+  const analyzeTemplateByImage = useCallback(async (options?: { source?: 'upload' | 'generate' }) => {
+    if (!isVariableTemplatePreset(inputTemplatePreset)) return;
+    if (!hasGeminiApiKeyConfigured()) return;
+    const firstImage = uploadedImages[0]?.url;
+    if (!firstImage) return;
+    const key = `${inputTemplatePreset}::${firstImage}`;
+    if (options?.source === 'upload' && key === lastAnalyzedImageKeyRef.current && lastAnalyzeSucceededRef.current) {
+      return;
+    }
+
+    const seq = analyzeRequestSeqRef.current + 1;
+    analyzeRequestSeqRef.current = seq;
+    setIsTemplateAnalyzing(true);
+    lastAnalyzedImageKeyRef.current = key;
+    lastAnalyzeSucceededRef.current = false;
+    try {
+      const currentVariables = collectTemplateVariableValues(editor.children as Descendant[]);
+      const parsed = await parseTemplateVariablesFromImage({
+        image: firstImage,
+        preset: inputTemplatePreset,
+        currentVariables,
+      });
+      if (seq !== analyzeRequestSeqRef.current) return;
+      const changed = applyTemplateVariableValues(parsed.variables);
+      lastAnalyzeSucceededRef.current = true;
+      if (changed > 0) {
+        toast.success(options?.source === 'upload' ? `已自动识图并更新 ${changed} 个变量` : `AI 识图已更新 ${changed} 个模板变量`);
+      }
+    } catch (e: unknown) {
+      if (seq !== analyzeRequestSeqRef.current) return;
+      const message = e instanceof Error ? e.message : '';
+      toast.message(message ? `AI 识图失败，沿用当前模板变量：${message}` : 'AI 识图失败，沿用当前模板变量');
+    } finally {
+      if (seq === analyzeRequestSeqRef.current) setIsTemplateAnalyzing(false);
+    }
+  }, [applyTemplateVariableValues, collectTemplateVariableValues, editor, inputTemplatePreset, uploadedImages]);
+
+  useEffect(() => {
+    const key = getTemplateAnalyzeKey();
+    if (!key) {
+      lastAnalyzedImageKeyRef.current = '';
+      lastAnalyzeSucceededRef.current = false;
+      return;
+    }
+    if (!usingVariableTemplate) return;
+    if (!hasGeminiApiKeyConfigured()) return;
+    if (isTemplateAnalyzing) return;
+    if (key === lastAnalyzedImageKeyRef.current && lastAnalyzeSucceededRef.current) return;
+    void analyzeTemplateByImage({ source: 'upload' });
+  }, [analyzeTemplateByImage, getTemplateAnalyzeKey, isTemplateAnalyzing, usingVariableTemplate]);
+
   const handleGenerate = async () => {
+    if (usingVariableTemplate && uploadedImages.length > 0 && hasGeminiApiKeyConfigured()) {
+      const key = getTemplateAnalyzeKey();
+      const analyzedCurrentImage = key && key === lastAnalyzedImageKeyRef.current && lastAnalyzeSucceededRef.current;
+      if (!analyzedCurrentImage) {
+        await analyzeTemplateByImage({ source: 'generate' });
+      }
+    }
+
     const rawPrompt = usingVariableTemplate ? syncTemplatePromptToStore() : inputValue;
 
     if (!rawPrompt.trim() && uploadedImages.length === 0) {
@@ -489,7 +605,7 @@ export function InputArea() {
   const detectLanguage = (prompt: string) => (hasChinese(prompt) ? ('zh' as const) : ('en' as const));
 
   const handleAIPolish = async () => {
-    if (isPolishing) return;
+    if (isPolishing || isTemplateAnalyzing) return;
     const rawPrompt = usingVariableTemplate ? syncTemplatePromptToStore() : inputValue;
     const current = (rawPrompt || '').trim();
 
@@ -630,7 +746,7 @@ export function InputArea() {
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={() => void handleAIPolish()}
-          disabled={isGenerating || isPolishing}
+          disabled={isGenerating || isPolishing || isTemplateAnalyzing}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 text-white text-sm font-medium hover:shadow-lg hover:shadow-violet-600/25 transition-shadow flex-shrink-0 disabled:opacity-50"
         >
           {isPolishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
@@ -640,10 +756,10 @@ export function InputArea() {
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={() => void handleGenerate()}
-          disabled={isGenerating}
+          disabled={isGenerating || isTemplateAnalyzing}
           className="w-10 h-10 rounded-xl bg-violet-600 flex items-center justify-center text-white hover:bg-violet-500 transition-colors flex-shrink-0 disabled:opacity-50"
         >
-          {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+          {isGenerating || isTemplateAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
         </motion.button>
       </div>
     </motion.div>

@@ -6,7 +6,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     name: '标准产品图',
     description: '双蝴蝶结对称陈列，突出产品质感与电商主图干净度。',
     defaultPromptSuffixZh:
-      '商业产品摄影，两个黑色蕾丝蝴蝶结对称地摆放在纯粉色的背景上。左上角有少量粉色花朵作为点缀，略微失焦。整体画面干净明亮，光线柔和均匀，高清细节，极简主义风格。',
+      '商业产品摄影，两个{BOW_PRODUCT}对称地摆放在纯粉色的背景上。左上角有少量粉色花朵作为点缀，略微失焦。整体画面干净明亮，光线柔和均匀，高清细节，极简主义风格。',
     defaultRatioMode: '1:1',
     defaultImageCount: 1,
   },
@@ -15,7 +15,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     name: '模特效果图',
     description: '儿童模特佩戴效果，强调佩戴场景与情绪感染力。',
     defaultPromptSuffixZh:
-      '一位可爱的金发小女孩，发型是双丸子头，佩戴着黑色蕾丝蝴蝶结。她正对着镜头甜美地微笑。场景在室外花园，背景有美丽的散景效果。采用自然光，色调温暖，高质量人像特写。',
+      '一位可爱的金发小女孩，发型是双丸子头，佩戴着{BOW_PRODUCT}。她正对着镜头甜美地微笑。场景在室外花园，背景有美丽的散景效果。采用自然光，色调温暖，高质量人像特写。',
     defaultRatioMode: '3:4',
     defaultImageCount: 1,
   },
@@ -24,7 +24,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     name: '尺寸参考图',
     description: '手掌托举展示尺寸，便于用户快速建立实际大小认知。',
     defaultPromptSuffixZh:
-      '一只干净的手，手掌向上轻轻托着一个黑色蕾丝蝴蝶结，用于直观展示产品的尺寸。背景是纯粉色的。光线明亮，焦点清晰，能看到产品的精致细节，商业摄影风格。',
+      '一只干净的手，手掌向上轻轻托着一个{BOW_PRODUCT}，用于直观展示产品的尺寸。背景是纯粉色的。光线明亮，焦点清晰，能看到产品的精致细节，商业摄影风格。',
     defaultRatioMode: '4:3',
     defaultImageCount: 1,
   },
@@ -33,7 +33,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     name: '尺寸标注图',
     description: '平铺展示并带横纵尺寸标注线，直观传达实际规格。',
     defaultPromptSuffixZh:
-      '一只黑色蕾丝蝴蝶结平铺在浅米粉背景中央，居中构图，中心有珍珠装饰。添加清晰的尺寸标注线与文字：横向标注 8.5cm/3.35inch，纵向标注 6.5cm/2.56inch。标注风格简洁专业，黑色细线与文字，画面干净，细节清晰，电商尺寸说明图风格。',
+      '一只{BOW_PRODUCT}平铺在浅米粉背景中央，居中构图，中心有珍珠装饰。添加清晰的尺寸标注线与文字：横向标注 8.5cm/3.35inch，纵向标注 6.5cm/2.56inch。标注风格简洁专业，黑色细线与文字，画面干净，细节清晰，电商尺寸说明图风格。',
     defaultRatioMode: '3:4',
     defaultImageCount: 1,
   },
@@ -42,7 +42,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     name: '假发参考图',
     description: '浅金色假发佩戴展示，突出真实佩戴位置与发丝质感。',
     defaultPromptSuffixZh:
-      '背面视角的假发展示图，浅金色发丝铺满画面，一只黑色蕾丝蝴蝶结固定在头发中部位置，中心珍珠清晰可见。背景为浅米色，光线柔和均匀，画面干净，细节清晰，电商佩戴参考图风格。',
+      '背面视角的假发展示图，浅金色发丝铺满画面，一只{BOW_PRODUCT}固定在头发中部位置，中心珍珠清晰可见。背景为浅米色，光线柔和均匀，画面干净，细节清晰，电商佩戴参考图风格。',
     defaultRatioMode: '16:9',
     defaultImageCount: 1,
   },

@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Check, ChevronDown, ChevronUp, Loader2, Plus, RotateCcw, Send, Trash2, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { useAppStore } from '@/store/appStore';
 import type { GenerationTask } from '@/store/appStore';
@@ -28,6 +28,7 @@ import { normalizeImageSize } from '@/lib/utils';
 import { PLATFORM_STANDARDS, getPlatformStandardById } from '@/constants/platformStandards';
 import { suiteTemplates } from '@/constants/templates';
 import { getSuitePresetById } from '@/constants/suitePresets';
+import { parseSuiteTemplateVariablesFromImage } from '@/lib/api';
 
 function joinPrompt(base: string, suffix: string) {
   const b = (base ?? '').trim();
@@ -36,6 +37,42 @@ function joinPrompt(base: string, suffix: string) {
   if (!s) return b;
   if (s.startsWith(',') || s.startsWith('，')) return `${b}${s}`;
   return `${b}, ${s}`;
+}
+
+const SUITE_TEMPLATE_VARIABLE_DEFAULTS: Record<string, Record<string, string>> = {
+  'suite-bow-lace-girls': {
+    BOW_PRODUCT: '黑色蕾丝蝴蝶结',
+  },
+};
+
+function getSuiteTemplateDefaultVariables(templateId?: string) {
+  if (!templateId) return {};
+  return { ...(SUITE_TEMPLATE_VARIABLE_DEFAULTS[templateId] ?? {}) };
+}
+
+function applySuiteTemplateVariables(input: string, variables: Record<string, string>) {
+  let output = input ?? '';
+  for (const [key, value] of Object.entries(variables)) {
+    const v = (value ?? '').trim();
+    if (!v) continue;
+    output = output.replaceAll(`{${key}}`, v);
+  }
+  return output;
+}
+
+function applySuiteTemplateVariableDiff(input: string, prev: Record<string, string>, next: Record<string, string>) {
+  let output = input ?? '';
+  const unionKeys = new Set([...Object.keys(prev), ...Object.keys(next)]);
+  for (const key of unionKeys) {
+    const prevVal = (prev[key] ?? '').trim();
+    const nextVal = (next[key] ?? '').trim();
+    if (!nextVal) continue;
+    output = output.replaceAll(`{${key}}`, nextVal);
+    if (prevVal && prevVal !== nextVal) {
+      output = output.replaceAll(prevVal, nextVal);
+    }
+  }
+  return output;
 }
 
 export function SuiteGeneratorView() {
@@ -61,6 +98,8 @@ export function SuiteGeneratorView() {
   const [newItemShotId, setNewItemShotId] = useState<string>('front');
   const [watermarkEnabled, setWatermarkEnabled] = useState(false);
   const [usePlatformStandard, setUsePlatformStandard] = useState(true);
+  const [suiteTemplateVariables, setSuiteTemplateVariables] = useState<Record<string, string>>({});
+  const [isTemplateVariableAnalyzing, setIsTemplateVariableAnalyzing] = useState(false);
   const [customShots, setCustomShots] = useState<SuiteShotDefinition[]>([]);
   const [customShotDialogOpen, setCustomShotDialogOpen] = useState(false);
   const [customShotDraft, setCustomShotDraft] = useState<{
@@ -74,6 +113,10 @@ export function SuiteGeneratorView() {
   const isGenerating = tasks.some((t) => t.status === 'processing');
   const abortRef = useRef<AbortController | null>(null);
   const lastPresetAtRef = useRef<number>(0);
+  const lastTemplateVariableAnalyzeKeyRef = useRef('');
+  const lastTemplateVariableAnalyzeSucceededRef = useRef(false);
+  const templateVariableAnalyzeSeqRef = useRef(0);
+  const prevSuiteTemplateVariablesRef = useRef<Record<string, string>>({});
   const {
     fileInputRef,
     handleFileUpload,
@@ -121,6 +164,10 @@ export function SuiteGeneratorView() {
   }, [inputValue]);
 
   const allowText = useMemo(() => activeTags.includes('text'), [activeTags]);
+  const supportsTemplateVariableAutofill = useMemo(
+    () => Boolean(selectedTemplate && SUITE_TEMPLATE_VARIABLE_DEFAULTS[selectedTemplate.id]),
+    [selectedTemplate]
+  );
 
   const ASPECT_RATIO_OPTIONS: Array<{ id: string; label: string }> = [
     { id: '智能比例', label: '智能比例' },
@@ -236,8 +283,13 @@ export function SuiteGeneratorView() {
     });
   };
 
-  const createItemFromShot = (shotId: string, overrides?: Partial<SuiteItemResult>) => {
+  const createItemFromShot = (
+    shotId: string,
+    overrides?: Partial<SuiteItemResult>,
+    templateVariablesOverride?: Record<string, string>
+  ) => {
     const shot = customShots.find((s) => s.id === shotId) ?? getSuiteShotById(shotId);
+    const templateVariables = templateVariablesOverride ?? suiteTemplateVariables;
     const modelId = resolveModelId(generationContext.model);
     const ratioMode = overrides?.ratioMode ?? shot?.defaultRatioMode ?? '智能比例';
     const defaultSizeMode: SuiteItemResult['sizeMode'] = ratioMode === '智能比例' ? 'resolution' : 'pixels';
@@ -247,7 +299,8 @@ export function SuiteGeneratorView() {
     const sizePx = overrides?.sizePx ?? (sizeMode === 'pixels' ? recommendedPixelSizesByRatio(ratioMode, modelId)[0] : undefined);
     const size = overrides?.size ?? resolveSizeFromItemConfig({ ratioMode, sizeMode, sizeResolution, sizePx, modelId });
     const imageCount = overrides?.imageCount ?? shot?.defaultImageCount ?? 1;
-    const promptBase = overrides?.promptBase ?? joinPrompt(baseGlobal, shot?.defaultPromptSuffixZh ?? '');
+    const promptSuffix = applySuiteTemplateVariables(shot?.defaultPromptSuffixZh ?? '', templateVariables);
+    const promptBase = overrides?.promptBase ?? joinPrompt(baseGlobal, promptSuffix);
     const prompt = composeItemPrompt({
       promptBase,
       ratioMode,
@@ -279,6 +332,64 @@ export function SuiteGeneratorView() {
       error: overrides?.error,
     } satisfies SuiteItemResult;
   };
+
+  const getTemplateVariableAnalyzeKey = useCallback(() => {
+    const firstImage = uploadedImages[0]?.url ?? '';
+    const templateId = selectedTemplate?.id ?? '';
+    if (!firstImage || !templateId || !supportsTemplateVariableAutofill) return '';
+    return `${templateId}::${firstImage}`;
+  }, [selectedTemplate, supportsTemplateVariableAutofill, uploadedImages]);
+
+  const analyzeSuiteTemplateVariables = useCallback(async (source: 'upload' | 'generate') => {
+    if (!selectedTemplate) return;
+    if (!supportsTemplateVariableAutofill) return;
+    if (!hasGeminiApiKeyConfigured()) return;
+    const firstImage = uploadedImages[0]?.url;
+    if (!firstImage) return;
+
+    const analyzeKey = `${selectedTemplate.id}::${firstImage}`;
+    if (source === 'upload' && analyzeKey === lastTemplateVariableAnalyzeKeyRef.current && lastTemplateVariableAnalyzeSucceededRef.current) {
+      return;
+    }
+
+    const seq = templateVariableAnalyzeSeqRef.current + 1;
+    templateVariableAnalyzeSeqRef.current = seq;
+    setIsTemplateVariableAnalyzing(true);
+    lastTemplateVariableAnalyzeKeyRef.current = analyzeKey;
+    lastTemplateVariableAnalyzeSucceededRef.current = false;
+
+    try {
+      const parsed = await parseSuiteTemplateVariablesFromImage({
+        image: firstImage,
+        templateId: selectedTemplate.id,
+        currentVariables: suiteTemplateVariables,
+      });
+      if (seq !== templateVariableAnalyzeSeqRef.current) return;
+
+      let changed = 0;
+      setSuiteTemplateVariables((prev) => {
+        const next = { ...prev };
+        for (const [key, value] of Object.entries(parsed.variables)) {
+          const normalized = (value ?? '').trim();
+          if (!normalized || next[key] === normalized) continue;
+          next[key] = normalized;
+          changed += 1;
+        }
+        return next;
+      });
+
+      lastTemplateVariableAnalyzeSucceededRef.current = true;
+      if (changed > 0) {
+        toast.success(source === 'upload' ? `已自动识图并更新 ${changed} 个套图变量` : `AI 识图已更新 ${changed} 个套图变量`);
+      }
+    } catch (e: unknown) {
+      if (seq !== templateVariableAnalyzeSeqRef.current) return;
+      const message = e instanceof Error ? e.message : '';
+      toast.message(message ? `套图识图失败，沿用当前变量：${message}` : '套图识图失败，沿用当前变量');
+    } finally {
+      if (seq === templateVariableAnalyzeSeqRef.current) setIsTemplateVariableAnalyzing(false);
+    }
+  }, [selectedTemplate, suiteTemplateVariables, supportsTemplateVariableAutofill, uploadedImages]);
 
   useEffect(() => {
     if (!selectedTemplate) return;
@@ -314,6 +425,47 @@ export function SuiteGeneratorView() {
   ]);
 
   useEffect(() => {
+    const key = getTemplateVariableAnalyzeKey();
+    if (!key) {
+      lastTemplateVariableAnalyzeKeyRef.current = '';
+      lastTemplateVariableAnalyzeSucceededRef.current = false;
+      return;
+    }
+    if (!hasGeminiApiKeyConfigured()) return;
+    if (isTemplateVariableAnalyzing) return;
+    if (key === lastTemplateVariableAnalyzeKeyRef.current && lastTemplateVariableAnalyzeSucceededRef.current) return;
+    void analyzeSuiteTemplateVariables('upload');
+  }, [analyzeSuiteTemplateVariables, getTemplateVariableAnalyzeKey, isTemplateVariableAnalyzing]);
+
+  useEffect(() => {
+    const prev = prevSuiteTemplateVariablesRef.current;
+    const next = suiteTemplateVariables;
+    prevSuiteTemplateVariablesRef.current = next;
+
+    if (!selectedTemplate) return;
+    if (!supportsTemplateVariableAutofill) return;
+    if (Object.keys(prev).length === 0) return;
+
+    const changedKeys = Object.keys(next).filter((k) => (prev[k] ?? '').trim() !== (next[k] ?? '').trim());
+    if (changedKeys.length === 0) return;
+
+    const modelId = resolveModelId(generationContext.model);
+    setSuiteItems((prevItems) =>
+      prevItems.map((item) => {
+        const nextPromptBase = applySuiteTemplateVariableDiff(item.promptBase ?? '', prev, next);
+        if (nextPromptBase === (item.promptBase ?? '')) return item;
+        const ratioMode = item.ratioMode ?? '智能比例';
+        const sizeMode = item.sizeMode;
+        const sizeResolution = item.sizeResolution;
+        const sizePx = item.sizePx;
+        const size = resolveSizeFromItemConfig({ ratioMode, sizeMode, sizeResolution, sizePx, modelId });
+        const prompt = composeItemPrompt({ promptBase: nextPromptBase, ratioMode, sizeMode, sizeResolution, sizePx, modelId });
+        return { ...item, promptBase: nextPromptBase, prompt, size };
+      })
+    );
+  }, [composeItemPrompt, generationContext.model, resolveSizeFromItemConfig, selectedTemplate, suiteTemplateVariables, supportsTemplateVariableAutofill]);
+
+  useEffect(() => {
     const req = suitePresetRequest;
     if (!req) return;
     if (req.requestedAt <= lastPresetAtRef.current) return;
@@ -332,6 +484,11 @@ export function SuiteGeneratorView() {
     setActiveSuiteTaskId(null);
     setUsePlatformStandard(true);
     setWatermarkEnabled(false);
+    const initialTemplateVariables = getSuiteTemplateDefaultVariables(tpl.id);
+    setSuiteTemplateVariables(initialTemplateVariables);
+    prevSuiteTemplateVariablesRef.current = initialTemplateVariables;
+    lastTemplateVariableAnalyzeKeyRef.current = '';
+    lastTemplateVariableAnalyzeSucceededRef.current = false;
     updateGenerationContext({
       scene: preset.scene,
       stylePreset: preset.stylePreset ?? undefined,
@@ -343,7 +500,9 @@ export function SuiteGeneratorView() {
     const shotIds = (tpl.defaultShotIds?.length ? tpl.defaultShotIds : tpl.availableShotIds) ?? [];
     const modelId = resolveModelId(generationContext.model);
     const initial = shotIds.map((id) => {
-      const item = createItemFromShot(id, { status: 'pending', promptBase: joinPrompt(nextGlobal, (customShots.find((s) => s.id === id) ?? getSuiteShotById(id))?.defaultPromptSuffixZh ?? '') });
+      const defaultShot = customShots.find((s) => s.id === id) ?? getSuiteShotById(id);
+      const promptSuffix = applySuiteTemplateVariables(defaultShot?.defaultPromptSuffixZh ?? '', initialTemplateVariables);
+      const item = createItemFromShot(id, { status: 'pending', promptBase: joinPrompt(nextGlobal, promptSuffix) }, initialTemplateVariables);
       const promptBase = joinPrompt(item.promptBase ?? '', preset.promptAddonZh);
       const ratioMode = item.ratioMode ?? '智能比例';
       const sizeMode = item.sizeMode;
@@ -357,7 +516,7 @@ export function SuiteGeneratorView() {
     setSuiteItems(initial);
     setNewItemShotId((tpl.availableShotIds?.[0] ?? shotIds[0] ?? 'front').toString());
     toast.success(`已应用「${preset.name}」预设`);
-  }, [customShots, generationContext.model, inputValue, setInputValue, suitePresetRequest, updateGenerationContext]);
+  }, [customShots, createItemFromShot, generationContext.model, inputValue, setInputValue, suitePresetRequest, updateGenerationContext]);
 
   const handleResetDerived = () => {
     const modelId = resolveModelId(generationContext.model);
@@ -370,7 +529,8 @@ export function SuiteGeneratorView() {
           it.sizeResolution ?? (sizeMode === 'resolution' ? (resolveResolutionOptions(modelId)[0] as any) : undefined);
         const sizePx = it.sizePx ?? (sizeMode === 'pixels' ? recommendedPixelSizesByRatio(ratioMode, modelId)[0] : undefined);
         const size = resolveSizeFromItemConfig({ ratioMode, sizeMode, sizeResolution, sizePx, modelId });
-        const promptBase = joinPrompt(baseGlobal, shot?.defaultPromptSuffixZh ?? '');
+        const promptSuffix = applySuiteTemplateVariables(shot?.defaultPromptSuffixZh ?? '', suiteTemplateVariables);
+        const promptBase = joinPrompt(baseGlobal, promptSuffix);
         const prompt = composeItemPrompt({ promptBase, ratioMode, sizeMode, sizeResolution, sizePx, modelId });
         return { ...it, name: shot?.name ?? it.name, promptBase, prompt, ratioMode, sizeMode, sizeResolution, sizePx, size };
       })
@@ -462,6 +622,16 @@ export function SuiteGeneratorView() {
       toast.error('请选择套图模版');
       return;
     }
+
+    if (supportsTemplateVariableAutofill && uploadedImages.length > 0 && hasGeminiApiKeyConfigured()) {
+      const key = getTemplateVariableAnalyzeKey();
+      const analyzedCurrentImage =
+        key && key === lastTemplateVariableAnalyzeKeyRef.current && lastTemplateVariableAnalyzeSucceededRef.current;
+      if (!analyzedCurrentImage) {
+        await analyzeSuiteTemplateVariables('generate');
+      }
+    }
+
     if (!inputValue.trim() && uploadedImages.length === 0) {
       toast.error('请输入全局商品描述或上传参考图');
       return;
@@ -565,8 +735,13 @@ export function SuiteGeneratorView() {
           selectedTemplateId={null}
           onSelect={(tpl) => {
             setSelectedTemplate(tpl);
+            const initialTemplateVariables = getSuiteTemplateDefaultVariables(tpl.id);
+            setSuiteTemplateVariables(initialTemplateVariables);
+            prevSuiteTemplateVariablesRef.current = initialTemplateVariables;
+            lastTemplateVariableAnalyzeKeyRef.current = '';
+            lastTemplateVariableAnalyzeSucceededRef.current = false;
             const shotIds = (tpl.defaultShotIds?.length ? tpl.defaultShotIds : tpl.availableShotIds) ?? [];
-            const initial = shotIds.map((id) => createItemFromShot(id, { status: 'pending' }));
+            const initial = shotIds.map((id) => createItemFromShot(id, { status: 'pending' }, initialTemplateVariables));
             setSuiteItems(initial);
             setActiveSuiteTaskId(null);
             setNewItemShotId((tpl.availableShotIds?.[0] ?? shotIds[0] ?? 'front').toString());
@@ -589,6 +764,10 @@ export function SuiteGeneratorView() {
                   setSelectedTemplate(null);
                   setSuiteItems([]);
                   setActiveSuiteTaskId(null);
+                  setSuiteTemplateVariables({});
+                  prevSuiteTemplateVariablesRef.current = {};
+                  lastTemplateVariableAnalyzeKeyRef.current = '';
+                  lastTemplateVariableAnalyzeSucceededRef.current = false;
                 }}
                 disabled={isGenerating}
               >
@@ -642,7 +821,7 @@ export function SuiteGeneratorView() {
                   type="button"
                   variant="outline"
                   onClick={openPicker}
-                  disabled={isGenerating}
+                  disabled={isGenerating || isTemplateVariableAnalyzing}
                 >
                   <Plus className="w-4 h-4" />
                   上传参考图
@@ -804,8 +983,8 @@ export function SuiteGeneratorView() {
                       停止
                     </Button>
                   ) : (
-                    <Button type="button" onClick={handleStart}>
-                      <Send className="w-4 h-4" />
+                    <Button type="button" onClick={handleStart} disabled={isTemplateVariableAnalyzing}>
+                      {isTemplateVariableAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                       开始生成
                     </Button>
                   )}

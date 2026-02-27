@@ -18,6 +18,7 @@ const GENERATION_TIMEOUT_PER_IMAGE_MS = 30000;
 const GENERATION_TIMEOUT_REFERENCE_BONUS_MS = 15000;
 const GENERATION_TIMEOUT_GEMINI_BONUS_MS = 30000;
 const GENERATION_TIMEOUT_MAX_MS = 300000;
+const GEMINI_VISION_MODEL_ID = 'gemini-3-pro';
 
 type ImageInlineData = {
   data: string;
@@ -604,6 +605,18 @@ export type SmartLayoutTemplateImageParseZone = {
   zIndex?: number;
 };
 
+export type VariableTemplatePreset = 'bow-detail' | 'hair-organizer';
+
+export type TemplateVariableImageParseResult = {
+  variables: Record<string, string>;
+  reason?: string;
+};
+
+export type SuiteTemplateVariableImageParseResult = {
+  variables: Record<string, string>;
+  reason?: string;
+};
+
 export type SmartLayoutTemplateImageMainCandidate = {
   bboxNormalized: { x: number; y: number; w: number; h: number };
   confidence: number;
@@ -621,11 +634,133 @@ export type SmartLayoutTemplateImageParseResult = {
   zones: SmartLayoutTemplateImageParseZone[];
 };
 
+const VARIABLE_KEYS_BY_PRESET: Record<VariableTemplatePreset, string[]> = {
+  'bow-detail': [
+    'productSubject',
+    'productName',
+    'styleTone',
+    'lightingStyle',
+    'colorPalette',
+    'topBlockStyle',
+    'headlineText',
+    'sceneSetting',
+    'detailOne',
+    'detailTwo',
+    'detailThree',
+    'copyOne',
+    'copyTwo',
+    'copyThree',
+    'fontStyle',
+    'fontColor',
+    'designMood',
+    'outputRequirement',
+  ],
+  'hair-organizer': [
+    'productName',
+    'styleTone',
+    'lightingStyle',
+    'colorPalette',
+    'topBlockStyle',
+    'headlineText',
+    'sceneSetting',
+    'rightScene',
+    'detailOne',
+    'detailTwo',
+    'detailThree',
+    'copyOne',
+    'copyTwo',
+    'copyThree',
+    'fontStyle',
+    'fontColor',
+    'designMood',
+    'outputRequirement',
+  ],
+};
+
+const VARIABLE_KEY_HINTS_BY_PRESET: Record<VariableTemplatePreset, Record<string, string>> = {
+  'bow-detail': {
+    productSubject: '海报主标题中的商品主题词（如：蝴蝶结/发带/头花）',
+    productName: '主商品名称与核心外观描述（颜色/材质/款式）',
+    styleTone: '视觉风格调性',
+    lightingStyle: '光线类型与氛围',
+    colorPalette: '主色与辅色搭配',
+    topBlockStyle: '顶部信息区版式建议',
+    headlineText: '标题文案',
+    sceneSetting: '主体所在场景描述',
+    detailOne: '细节点1（结构/工艺）',
+    detailTwo: '细节点2（结构/工艺）',
+    detailThree: '细节点3（结构/工艺）',
+    copyOne: '英文短文案1',
+    copyTwo: '英文短文案2',
+    copyThree: '英文短文案3',
+    fontStyle: '字体风格建议',
+    fontColor: '文字颜色建议',
+    designMood: '整体设计质感方向',
+    outputRequirement: '最终出图质量与限制',
+  },
+  'hair-organizer': {
+    productName: '主商品名称与核心外观描述（颜色/材质/款式）',
+    styleTone: '视觉风格调性',
+    lightingStyle: '光线类型与氛围',
+    colorPalette: '主色与辅色搭配',
+    topBlockStyle: '左侧信息区版式建议',
+    headlineText: '标题文案',
+    sceneSetting: '中部主场景',
+    rightScene: '右侧生活方式场景',
+    detailOne: '细节点1（结构/功能）',
+    detailTwo: '细节点2（结构/功能）',
+    detailThree: '细节点3（结构/功能）',
+    copyOne: '英文短文案1',
+    copyTwo: '英文短文案2',
+    copyThree: '英文短文案3',
+    fontStyle: '字体风格建议',
+    fontColor: '文字颜色建议',
+    designMood: '整体设计质感方向',
+    outputRequirement: '最终出图质量与限制',
+  },
+};
+
+const SUITE_TEMPLATE_VARIABLE_CONFIGS: Record<
+  string,
+  { keys: string[]; keyHints: Record<string, string> }
+> = {
+  'suite-bow-lace-girls': {
+    keys: ['BOW_PRODUCT'],
+    keyHints: {
+      BOW_PRODUCT: '蝴蝶结商品完整描述（优先包含颜色/材质/样式，如“蓝色缎面蝴蝶结”）',
+    },
+  },
+};
+
 function extractJsonCandidate(input: string) {
   const start = input.indexOf('{');
   const end = input.lastIndexOf('}');
   if (start >= 0 && end > start) return input.slice(start, end + 1);
   return input;
+}
+
+function parseVariableImageJsonByAllowedKeys(input: string, allowedKeys: string[]): { variables: Record<string, string>; reason?: string } {
+  const parsed = JSON.parse(extractJsonCandidate((input || '').trim())) as any;
+  const rawVariables = parsed?.variables;
+  const allowed = new Set(allowedKeys);
+  const variables: Record<string, string> = {};
+
+  if (rawVariables && typeof rawVariables === 'object' && !Array.isArray(rawVariables)) {
+    for (const [key, value] of Object.entries(rawVariables as Record<string, unknown>)) {
+      if (!allowed.has(key)) continue;
+      if (typeof value !== 'string') continue;
+      const normalized = value.trim().replace(/\s+/g, ' ');
+      if (!normalized) continue;
+      variables[key] = normalized;
+    }
+  }
+
+  const reason = typeof parsed?.reason === 'string' ? parsed.reason.trim() : undefined;
+  return { variables, reason };
+}
+
+function parseTemplateVariableImageJson(input: string, preset: VariableTemplatePreset): TemplateVariableImageParseResult {
+  return parseVariableImageJsonByAllowedKeys(input, VARIABLE_KEYS_BY_PRESET[preset]);
 }
 
 function clamp01(n: number) {
@@ -717,6 +852,127 @@ function parseSmartLayoutTemplateImageJson(input: string): SmartLayoutTemplateIm
   };
 }
 
+export async function parseTemplateVariablesFromImage(input: {
+  image: string;
+  preset: VariableTemplatePreset;
+  currentVariables?: Record<string, string>;
+  signal?: AbortSignal;
+}): Promise<TemplateVariableImageParseResult> {
+  const ai = getGeminiClient();
+  if (!ai) {
+    throw new Error('未配置 VITE_GOOGLE_API_KEY，无法执行模板识图');
+  }
+
+  const inlineData = await toInlineData(input.image, input.signal);
+  const allowedKeys = VARIABLE_KEYS_BY_PRESET[input.preset];
+  const keyHints = VARIABLE_KEY_HINTS_BY_PRESET[input.preset];
+  const system = [
+    '你是电商图片变量映射助手。',
+    '任务：先识别产品图片，再把识别结果映射到给定模板变量。',
+    '要求：',
+    '- 只输出 JSON，不要解释、不要 Markdown、不要代码块。',
+    '- 输出结构固定为 {"variables":{"key":"value"},"reason":"可选一句话"}。',
+    '- variables 的 key 只能来自 allowedKeys。',
+    '- 只返回“需要替换”的变量；不确定或与图片无关的变量不要返回。',
+    '- 必须优先识别并回填客观属性：颜色、材质、形态、图案、数量、结构。',
+    '- 若 currentVariables 与图片冲突，以图片识别结果为准（例如当前是“粉色”，图片是“蓝色”，应改成“蓝色”）。',
+    '- colorPalette、productName、sceneSetting/rightScene 等颜色或场景相关字段优先优化。',
+    '- 变量 value 需短句、可直接替换，不要包含占位符或额外字段。',
+    '- 保持模板可复用，不要写死品牌、店铺名、价格、促销语。',
+    '- 输出中文。',
+  ].join('\n');
+
+  const requestPayload = {
+    model: GEMINI_VISION_MODEL_ID,
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { inlineData },
+          { text: system },
+          { text: `preset=${input.preset}` },
+          { text: `allowedKeys=${JSON.stringify(allowedKeys)}` },
+          { text: `keyHints=${JSON.stringify(keyHints)}` },
+          { text: `currentVariables=${JSON.stringify(input.currentVariables || {})}` },
+        ],
+      },
+    ] as any,
+    config: {
+      responseModalities: ['TEXT'],
+      temperature: 0.2,
+    },
+  } as any;
+
+  const timeoutMs = Math.min(120000, resolveGenerationTimeoutMs({ model: GEMINI_VISION_MODEL_ID } as any));
+  const response: any = await withTimeoutAndAbort(ai.models.generateContent(requestPayload), input.signal, timeoutMs);
+  const textFallback =
+    (typeof response?.text === 'string' ? response.text : '') ||
+    response?.candidates?.[0]?.content?.parts?.find?.((part: any) => part?.text)?.text ||
+    '';
+
+  return parseTemplateVariableImageJson(textFallback, input.preset);
+}
+
+export async function parseSuiteTemplateVariablesFromImage(input: {
+  image: string;
+  templateId: string;
+  currentVariables?: Record<string, string>;
+  signal?: AbortSignal;
+}): Promise<SuiteTemplateVariableImageParseResult> {
+  const ai = getGeminiClient();
+  if (!ai) {
+    throw new Error('未配置 VITE_GOOGLE_API_KEY，无法执行模板识图');
+  }
+
+  const config = SUITE_TEMPLATE_VARIABLE_CONFIGS[input.templateId];
+  if (!config) return { variables: {} };
+
+  const inlineData = await toInlineData(input.image, input.signal);
+  const system = [
+    '你是电商套图模板变量映射助手。',
+    '任务：先识别产品图片，再把识别结果映射到套图模板变量。',
+    '要求：',
+    '- 只输出 JSON，不要解释、不要 Markdown、不要代码块。',
+    '- 输出结构固定为 {"variables":{"key":"value"},"reason":"可选一句话"}。',
+    '- variables 的 key 只能来自 allowedKeys。',
+    '- 只返回“需要替换”的变量；不确定或与图片无关的变量不要返回。',
+    '- 必须优先识别客观属性：颜色、材质、形态、图案、数量、结构。',
+    '- 若 currentVariables 与图片冲突，以图片识别结果为准（例如当前是“粉色”，图片是“蓝色”，应改成“蓝色”）。',
+    '- 变量 value 需短句、可直接替换，不要包含占位符或额外字段。',
+    '- 输出中文。',
+  ].join('\n');
+
+  const requestPayload = {
+    model: GEMINI_VISION_MODEL_ID,
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { inlineData },
+          { text: system },
+          { text: `templateId=${input.templateId}` },
+          { text: `allowedKeys=${JSON.stringify(config.keys)}` },
+          { text: `keyHints=${JSON.stringify(config.keyHints)}` },
+          { text: `currentVariables=${JSON.stringify(input.currentVariables || {})}` },
+        ],
+      },
+    ] as any,
+    config: {
+      responseModalities: ['TEXT'],
+      temperature: 0.2,
+    },
+  } as any;
+
+  const timeoutMs = Math.min(120000, resolveGenerationTimeoutMs({ model: GEMINI_VISION_MODEL_ID } as any));
+  const response: any = await withTimeoutAndAbort(ai.models.generateContent(requestPayload), input.signal, timeoutMs);
+  const textFallback =
+    (typeof response?.text === 'string' ? response.text : '') ||
+    response?.candidates?.[0]?.content?.parts?.find?.((part: any) => part?.text)?.text ||
+    '';
+
+  return parseVariableImageJsonByAllowedKeys(textFallback, config.keys);
+}
+
 export async function parseSmartLayoutTemplateFromImage(input: {
   image: string;
   outputLanguage?: 'auto' | 'zh' | 'en';
@@ -750,7 +1006,7 @@ export async function parseSmartLayoutTemplateFromImage(input: {
 
   const inlineData = await toInlineData(input.image, input.signal);
   const requestPayload = {
-    model: TAIHAO_PRO_MODEL_ID,
+    model: GEMINI_VISION_MODEL_ID,
     contents: [
       {
         role: 'user',
@@ -774,7 +1030,7 @@ export async function parseSmartLayoutTemplateFromImage(input: {
     },
   } as any;
 
-  const timeoutMs = Math.min(120000, resolveGenerationTimeoutMs({ model: TAIHAO_PRO_MODEL_ID } as any));
+  const timeoutMs = Math.min(120000, resolveGenerationTimeoutMs({ model: GEMINI_VISION_MODEL_ID } as any));
   const response: any = await withTimeoutAndAbort(ai.models.generateContent(requestPayload), input.signal, timeoutMs);
 
   const textFallback =
