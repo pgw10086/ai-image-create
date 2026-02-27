@@ -47,7 +47,68 @@ export interface SmartLayoutSettings {
   showSketchPreviewWithImages: boolean; // 预览时是否展示贴图（仅影响预览，不影响生成时的真实 renderMode）
   enableRegionPrompts: boolean; // 在最终 Prompt 中输出 REGION_PROMPTS 段落（默认开启）
   enableDepthTree: boolean; // 输出 DEPTH_TREE 段落（默认开启）
+  enableTwoStageGeneration: boolean; // 两阶段生成：先构图草稿再精修（默认开启）
 }
+
+export type CopyVariableKey =
+  | 'PRODUCT'
+  | 'TITLE'
+  | 'SUBTITLE'
+  | 'CTA'
+  | 'BADGE'
+  | 'PRICE'
+  | `BULLET_${1 | 2 | 3 | 4 | 5}`;
+
+export type SmartLayoutCopyVariables = Partial<Record<CopyVariableKey, string>>;
+
+export type ProductTemplateImageType = 'main' | 'detail' | 'comparison' | 'size' | 'scene';
+export type ProductTemplateInfoDensity = 'low' | 'medium' | 'high';
+export type ProductTemplateStylePreset =
+  | 'brand'
+  | 'minimal'
+  | 'tech'
+  | 'cute'
+  | 'warm'
+  | 'luxury'
+  | 'fresh'
+  | 'retro';
+
+export type ProductTemplatePlatformId =
+  | 'amazon'
+  | 'temu'
+  | 'shopee'
+  | 'tiktok'
+  | 'aliexpress'
+  | 'alibaba'
+  | 'lazada'
+  | 'ebay'
+  | 'shein'
+  | 'other';
+
+export type ProductTemplateSizePreset =
+  | '1:1'
+  | '3:4'
+  | '4:5'
+  | '2:3'
+  | '16:9'
+  | '9:16'
+  | 'long';
+
+export type ProductTemplateIntentV1 = {
+  schemaVersion: 1;
+  imageType: ProductTemplateImageType;
+  platformId?: ProductTemplatePlatformId;
+  sizePreset?: ProductTemplateSizePreset;
+  targetCanvasSizePx?: { width?: number; height?: number };
+  infoDensity: ProductTemplateInfoDensity;
+  stylePreset?: ProductTemplateStylePreset;
+  copy: {
+    bulletCountMax: 0 | 1 | 2 | 3 | 4 | 5;
+    titleCharLimit?: number;
+    allowPrice?: boolean;
+    allowPromoBadge?: boolean;
+  };
+};
 
 export interface SmartLayoutDraftV1 {
   schemaVersion: 1;
@@ -55,6 +116,8 @@ export interface SmartLayoutDraftV1 {
   canvasSize: { width: number; height: number };
   zones: LayoutZone[];
   settings: SmartLayoutSettings;
+  copyVariables?: SmartLayoutCopyVariables;
+  productTemplateIntent?: ProductTemplateIntentV1;
   generationContextSnapshot?: {
     platformId?: string;
     language?: 'zh' | 'en';
@@ -77,6 +140,8 @@ export interface SmartLayoutTemplateV1 {
     canvasSize: { width: number; height: number };
     zones: LayoutZone[];
     settings: SmartLayoutSettings;
+    copyVariables?: SmartLayoutCopyVariables;
+    productTemplateIntent?: ProductTemplateIntentV1;
     generationContextSnapshot?: SmartLayoutDraftV1['generationContextSnapshot'];
   };
 }

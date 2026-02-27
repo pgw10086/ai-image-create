@@ -81,6 +81,7 @@ export interface LayoutCompositionResult {
 
 **3.2 Prompt 组装**
 *   实现 `composeLayoutPrompt(zones: LayoutZone[], context?: GenerationContext): string`。
+*   **文案变量替换（新增）**：在进入 Prompt 组装前，先对 `zones[].prompt` 做变量替换。\n    *   支持变量：`{PRODUCT}/{TITLE}/{SUBTITLE}/{BULLET_1..5}/{CTA}/{BADGE}/{PRICE}`。\n    *   替换后的 prompt 用于预览面板与最终生成；模板本身仍可保留占位符以便复用。
 *   **拼接规则**：
     *   提取所有非空 Prompt。
     *   按照 `[背景] -> [环境/道具] -> [主体]` 的语义顺序进行拼接（可以通过 Zone 的 `type` 字段排序）。
@@ -100,7 +101,7 @@ export interface LayoutCompositionResult {
 \n*   **分次生成并发（必须）**：当需要用“单次生成”补齐张数时，前端应使用并发限流（例如并发 3）同时发起请求，并维护每张图的独立状态（生成中/成功/失败/已停止），失败不阻塞后续继续尝试。
 
 *   **后端能力分级**：\n    *   **Seedream 默认（当前）**：Region Prompter 仅作为 Prompt 文本约束；空间靠 `layoutSketch`；材质靠 `referenceImages`。\n    *   **可控后端增强（未来可选）**：当后端接入支持 Area Prompting 的生成管线时，直接把 `regionPrompts[]` 作为像素级区域控制输入（Zone A 区域仅受 Prompt A 控制），显著降低串色与串属性。\n
-*   **两阶段降级（可选开关）**：当出现位置漂移/遮挡错误/串色时启用：\n    *   阶段 1：仅用 `layoutSketch + combinedPrompt` 生成“构图正确草稿图”。\n    *   阶段 2：将草稿图作为最强参考图（image[0]），再叠加原始素材图（image[1..]）重绘细节与融合。
+*   **两阶段生成（可选开关，已实现）**：用于提升强结构商品图的构图稳定性（先构图后细化）：\n    *   阶段 1（Draft）：仅用 `layoutSketch + combinedPrompt` 生成“构图草稿图”。\n    *   阶段 2（Refine）：将草稿图作为最强参考图（image[0]），再叠加原始素材图（image[1..]）生成最终图。\n    *   说明：两阶段模式下，为保证每张图都能绑定各自的草稿图，不走一次多张的 `auto` 组图返回，统一按单张并发补齐。
 
 *   **与顶部参数条的匹配（必须）**：\n    *   `model`：由顶部“模型版本”映射到具体 model id，并写入最终请求。\n    *   `size`（S1 策略）：\n        *   `ratioMode=智能比例`：根据画布宽高比推导最合适的 `size`（并用于合成草图缩放与最终请求）。\n        *   `ratioMode=固定比例/分辨率`：直接使用用户选择映射出的 `size`（如 16:9 -> 2560x1440；4.0 支持 1K/2K/4K）。\n        *   **模型校验**：不同模型可用 `size` 不同（例如 SeedEdit 3.0-i2i 仅 adaptive），前端需禁用或在请求时自动回退。\n    *   `imageCount`：智能布局模式下与顶部“张数”一致。\n        *   模型支持组图：优先使用 `auto + max_images`。\n        *   模型不支持组图或参考图限制导致单次不足：前端分次调用单张生成接口补齐到 N（允许中途失败但继续尝试）。
 

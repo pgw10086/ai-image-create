@@ -1,13 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SEMANTIC_COLORS } from '@/types/smartLayout';
-import type { LayoutZone, SmartLayoutSettings } from '@/types/smartLayout';
+import type {
+  CopyVariableKey,
+  LayoutZone,
+  ProductTemplateIntentV1,
+  ProductTemplateImageType,
+  ProductTemplateInfoDensity,
+  ProductTemplatePlatformId,
+  ProductTemplateSizePreset,
+  ProductTemplateStylePreset,
+  SmartLayoutCopyVariables,
+  SmartLayoutSettings,
+} from '@/types/smartLayout';
 import { SmartCanvas } from './smart-layout/SmartCanvas';
 import type { SmartCanvasHandle } from './smart-layout/SmartCanvas';
 import { ConfigPanel } from './smart-layout/ConfigPanel';
 import { PreviewDialog } from './smart-layout/PreviewDialog';
-import { LayoutDescriptionPanel } from './smart-layout/LayoutDescriptionPanel';
+import { CopyVariablesPanel } from './smart-layout/CopyVariablesPanel';
+import { ProgressOverlay } from './smart-layout/ProgressOverlay';
 import { generateLayoutSketch, composeLayoutForGeneration } from '@/services/smartLayoutService';
-import { generateImage, parseSmartLayoutTemplateFromImage } from '@/lib/api';
+import { generateImage, generateSmartLayoutTemplateFromProductImage, parseSmartLayoutTemplateFromImage } from '@/lib/api';
+import type { GenerateImageResponse } from '@/types/api';
 import {
   hasGeminiApiKeyConfigured,
   isTaihaoProModel,
@@ -22,7 +35,11 @@ import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -36,6 +53,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Wand2, RotateCcw, Maximize2, Minimize2, PanelRightClose, PanelRightOpen, SlidersHorizontal, Info, Save, FolderOpen, Upload, Download, Trash2, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { enrichZonesForPrompt } from '@/lib/smartLayoutUtils';
+import { polishFreeGenerationPrompt, suggestSmartLayoutCopyVariables } from '@/lib/bigmodel';
 import { useAppStore } from '@/store/appStore';
 import { getPlatformStandardById } from '@/constants/platformStandards';
 import {
@@ -57,6 +75,8 @@ import type { SmartLayoutHistoryRecord } from '@/lib/smartLayoutPersistence';
 type ResultSlot = {
   status: 'pending' | 'processing' | 'success' | 'failed' | 'cancelled';
   url?: string;
+  draftUrl?: string;
+  phase?: 'draft' | 'refine' | 'final';
   error?: string;
 };
 
@@ -158,9 +178,27 @@ export function SmartLayoutView({ className }: { className?: string }) {
   const [variantResults, setVariantResults] = useState<Array<{ style: string; url: string }>>([]);
   const [variantOpen, setVariantOpen] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const currentRunIdRef = useRef<string | null>(null);
+  const historySaveFailedRef = useRef(false);
 
   useEffect(() => {
-    saveSmartLayoutHistory(resultHistory as SmartLayoutHistoryRecord[]);
+    const sanitized = resultHistory.map((entry) => ({
+      id: entry.id,
+      createdAt: entry.createdAt,
+      requestedImageCount: entry.requestedImageCount,
+      slots: entry.slots.map((slot) => ({
+        status: slot.status,
+        url: slot.url,
+        error: slot.error,
+      })),
+    })) as SmartLayoutHistoryRecord[];
+    const ok = saveSmartLayoutHistory(sanitized);
+    if (ok === false && !historySaveFailedRef.current) {
+      historySaveFailedRef.current = true;
+      toast.error('本地存储空间不足，历史记录未能保存（可尝试清理旧记录或减少生成张数）');
+      return;
+    }
+    if (ok) historySaveFailedRef.current = false;
   }, [resultHistory]);
 
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -178,6 +216,8 @@ export function SmartLayoutView({ className }: { className?: string }) {
   const parseTemplateImageInputRef = useRef<HTMLInputElement>(null);
   const parseTemplateAbortRef = useRef<AbortController | null>(null);
   const [isParsingTemplate, setIsParsingTemplate] = useState(false);
+  const [parseTemplateStageIndex, setParseTemplateStageIndex] = useState(0);
+  const [parseTemplateCancelRequested, setParseTemplateCancelRequested] = useState(false);
   const parseTemplateOptionsRef = useRef<{ outputLanguage: 'auto' | 'zh' | 'en'; productHint: string }>({
     outputLanguage: 'auto',
     productHint: '',
@@ -199,6 +239,90 @@ export function SmartLayoutView({ className }: { className?: string }) {
       return '';
     }
   });
+
+  const productTemplateImageInputRef = useRef<HTMLInputElement>(null);
+  const productTemplateAbortRef = useRef<AbortController | null>(null);
+  const [isGeneratingProductTemplate, setIsGeneratingProductTemplate] = useState(false);
+  const [productTemplateStageIndex, setProductTemplateStageIndex] = useState(0);
+  const [productTemplateCancelRequested, setProductTemplateCancelRequested] = useState(false);
+  const productTemplateOptionsRef = useRef<{ outputLanguage: 'auto' | 'zh' | 'en'; productHint: string; brief: string; intent: ProductTemplateIntentV1 }>({
+    outputLanguage: 'auto',
+    productHint: '',
+    brief: '',
+    intent: {
+      schemaVersion: 1,
+      imageType: 'main',
+      infoDensity: 'medium',
+      copy: { bulletCountMax: 3 },
+    },
+  });
+  const [productTemplateSettingsOpen, setProductTemplateSettingsOpen] = useState(false);
+  const [productTemplateOutputLanguage, setProductTemplateOutputLanguage] = useState<'auto' | 'zh' | 'en'>(() => {
+    try {
+      const raw = localStorage.getItem('smart_layout_product_template_output_language');
+      if (raw === 'zh' || raw === 'en' || raw === 'auto') return raw;
+      return 'auto';
+    } catch {
+      return 'auto';
+    }
+  });
+  const [productTemplateProductHint, setProductTemplateProductHint] = useState(() => {
+    try {
+      return localStorage.getItem('smart_layout_product_template_product_hint') || '';
+    } catch {
+      return '';
+    }
+  });
+  const defaultProductTemplateIntent: ProductTemplateIntentV1 = {
+    schemaVersion: 1,
+    imageType: 'main',
+    platformId: undefined,
+    sizePreset: undefined,
+    targetCanvasSizePx: undefined,
+    infoDensity: 'medium',
+    stylePreset: undefined,
+    copy: {
+      bulletCountMax: 3,
+      titleCharLimit: undefined,
+      allowPrice: false,
+      allowPromoBadge: false,
+    },
+  };
+  const [productTemplateIntent, setProductTemplateIntent] = useState<ProductTemplateIntentV1>(() => {
+    try {
+      const raw = localStorage.getItem('smart_layout_product_template_intent_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw) as unknown;
+        if (parsed && typeof parsed === 'object' && (parsed as any).schemaVersion === 1) {
+          const v = parsed as ProductTemplateIntentV1;
+          return { ...defaultProductTemplateIntent, ...v, copy: { ...defaultProductTemplateIntent.copy, ...(v.copy || {}) } };
+        }
+      }
+    } catch {
+      return { ...defaultProductTemplateIntent };
+    }
+    return { ...defaultProductTemplateIntent };
+  });
+
+  const parseTemplateProgressStages = ['准备图片', '分析图片', '生成布局分区', '应用到画布'];
+  const productTemplateProgressStages = ['准备图片', '分析商品图与描述', '生成布局分区', '应用到画布'];
+  const [productTemplateBrief, setProductTemplateBrief] = useState(() => {
+    try {
+      return localStorage.getItem('smart_layout_product_template_brief') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [isProductTemplateBriefEdited, setIsProductTemplateBriefEdited] = useState(false);
+  const [isPolishingProductTemplateBrief, setIsPolishingProductTemplateBrief] = useState(false);
+  const [productTemplateIntentAdvancedOpen, setProductTemplateIntentAdvancedOpen] = useState(() => {
+    try {
+      return localStorage.getItem('smart_layout_product_template_intent_advanced_open') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
   const [mainConfirmOpen, setMainConfirmOpen] = useState(false);
   const [mainCandidates, setMainCandidates] = useState<MainCandidate[]>([]);
   const [mainConfidence, setMainConfidence] = useState<number | null>(null);
@@ -214,22 +338,27 @@ export function SmartLayoutView({ className }: { className?: string }) {
   });
   const [pendingDraftUpdatedAt, setPendingDraftUpdatedAt] = useState<number | null>(null);
 
+  const normalizeSettings = (input?: Partial<SmartLayoutSettings>): SmartLayoutSettings => {
+    return {
+      layoutSketchRenderMode: input?.layoutSketchRenderMode === 'segmentation' ? 'segmentation' : 'collage',
+      showSketchPreviewWithImages: input?.showSketchPreviewWithImages !== false,
+      enableRegionPrompts: input?.enableRegionPrompts !== false,
+      enableDepthTree: input?.enableDepthTree !== false,
+      enableTwoStageGeneration: input?.enableTwoStageGeneration === true,
+    };
+  };
+
   const [settings, setSettings] = useState<SmartLayoutSettings>(() => {
     try {
       const raw = localStorage.getItem('smart_layout_settings');
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<SmartLayoutSettings>;
-        return {
-          layoutSketchRenderMode: parsed.layoutSketchRenderMode === 'segmentation' ? 'segmentation' : 'collage',
-          showSketchPreviewWithImages: parsed.showSketchPreviewWithImages !== false,
-          enableRegionPrompts: parsed.enableRegionPrompts !== false,
-          enableDepthTree: parsed.enableDepthTree !== false,
-        };
+        return normalizeSettings(parsed);
       }
     } catch {
-      return { layoutSketchRenderMode: 'collage', showSketchPreviewWithImages: true, enableRegionPrompts: true, enableDepthTree: true };
+      return normalizeSettings();
     }
-    return { layoutSketchRenderMode: 'collage', showSketchPreviewWithImages: true, enableRegionPrompts: true, enableDepthTree: true };
+    return normalizeSettings();
   });
 
   useEffect(() => {
@@ -240,21 +369,48 @@ export function SmartLayoutView({ className }: { className?: string }) {
     }
   }, [settings]);
 
-  const [productValue, setProductValue] = useState(() => {
+  const defaultCopyVariables: SmartLayoutCopyVariables = {
+    PRODUCT: '',
+    TITLE: '',
+    SUBTITLE: '',
+    BULLET_1: '',
+    BULLET_2: '',
+    BULLET_3: '',
+    BULLET_4: '',
+    BULLET_5: '',
+    CTA: '',
+    BADGE: '',
+    PRICE: '',
+  };
+
+  const [copyVariables, setCopyVariables] = useState<SmartLayoutCopyVariables>(() => {
     try {
-      return localStorage.getItem('smart_layout_var_product') || '';
+      const raw = localStorage.getItem('smart_layout_copy_variables_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw) as unknown;
+        if (parsed && typeof parsed === 'object') {
+          return { ...defaultCopyVariables, ...(parsed as SmartLayoutCopyVariables) };
+        }
+      }
     } catch {
-      return '';
+      return { ...defaultCopyVariables };
+    }
+    try {
+      const product = localStorage.getItem('smart_layout_var_product') || '';
+      return { ...defaultCopyVariables, PRODUCT: product };
+    } catch {
+      return { ...defaultCopyVariables };
     }
   });
 
   useEffect(() => {
     try {
-      localStorage.setItem('smart_layout_var_product', productValue);
+      localStorage.setItem('smart_layout_copy_variables_v1', JSON.stringify(copyVariables));
+      localStorage.setItem('smart_layout_var_product', (copyVariables.PRODUCT || '').toString());
     } catch {
       return;
     }
-  }, [productValue]);
+  }, [copyVariables]);
 
   useEffect(() => {
     try {
@@ -264,6 +420,134 @@ export function SmartLayoutView({ className }: { className?: string }) {
       return;
     }
   }, [parseTemplateOutputLanguage, parseTemplateProductHint]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('smart_layout_product_template_output_language', productTemplateOutputLanguage);
+      localStorage.setItem('smart_layout_product_template_product_hint', productTemplateProductHint);
+      localStorage.setItem('smart_layout_product_template_brief', productTemplateBrief);
+      localStorage.setItem('smart_layout_product_template_intent_v1', JSON.stringify(productTemplateIntent));
+      localStorage.setItem('smart_layout_product_template_intent_advanced_open', String(productTemplateIntentAdvancedOpen));
+    } catch {
+      return;
+    }
+  }, [productTemplateOutputLanguage, productTemplateProductHint, productTemplateBrief, productTemplateIntent, productTemplateIntentAdvancedOpen]);
+
+  const resolveBriefLanguage = (brief: string) => {
+    const preferred = (productTemplateOutputLanguage || 'auto').trim();
+    if (preferred === 'zh' || preferred === 'en') return preferred;
+    return /[\u4e00-\u9fff]/.test(brief) ? 'zh' : 'en';
+  };
+
+  const labelProductTemplateImageType = (v: ProductTemplateImageType) => {
+    if (v === 'main') return '主图（吸引点击）';
+    if (v === 'detail') return '详情（解释卖点）';
+    if (v === 'comparison') return '对比（建立差异）';
+    if (v === 'size') return '尺寸/参数（证明规格）';
+    return '场景（氛围种草）';
+  };
+
+  const labelProductTemplatePlatform = (v: ProductTemplatePlatformId) => {
+    if (v === 'amazon') return 'Amazon';
+    if (v === 'temu') return 'Temu';
+    if (v === 'shopee') return 'Shopee';
+    if (v === 'tiktok') return 'TikTok';
+    if (v === 'aliexpress') return 'AliExpress';
+    if (v === 'alibaba') return 'Alibaba';
+    if (v === 'lazada') return 'Lazada';
+    if (v === 'ebay') return 'eBay';
+    if (v === 'shein') return 'SHEIN';
+    return '其他';
+  };
+
+  const labelProductTemplateDensity = (v: ProductTemplateInfoDensity) => {
+    if (v === 'low') return '少';
+    if (v === 'high') return '多';
+    return '中';
+  };
+
+  const labelProductTemplateStyle = (v: ProductTemplateStylePreset) => {
+    if (v === 'brand') return '品牌';
+    if (v === 'minimal') return '极简';
+    if (v === 'tech') return '科技';
+    if (v === 'cute') return '可爱';
+    if (v === 'warm') return '温暖';
+    if (v === 'luxury') return '高级';
+    if (v === 'fresh') return '清新';
+    return '复古';
+  };
+
+  const labelProductTemplateSizePreset = (v: ProductTemplateSizePreset) => {
+    if (v === '1:1') return '1:1';
+    if (v === '3:4') return '3:4';
+    if (v === '4:5') return '4:5';
+    if (v === '2:3') return '2:3';
+    if (v === '16:9') return '16:9';
+    if (v === '9:16') return '9:16';
+    return '长图';
+  };
+
+  const buildProductTemplateBriefFromIntent = (intent: ProductTemplateIntentV1) => {
+    const lines: string[] = [];
+    const platform = intent.platformId ? labelProductTemplatePlatform(intent.platformId) : '不限平台';
+    const size = intent.sizePreset ? labelProductTemplateSizePreset(intent.sizePreset) : '不限';
+    const targetW = typeof intent.targetCanvasSizePx?.width === 'number' ? Math.round(intent.targetCanvasSizePx.width) : null;
+    const targetH = typeof intent.targetCanvasSizePx?.height === 'number' ? Math.round(intent.targetCanvasSizePx.height) : null;
+    const targetText = targetW && targetH ? `，目标像素 ${targetW}×${targetH}px` : '';
+    const style = intent.stylePreset ? labelProductTemplateStyle(intent.stylePreset) : '中性';
+    const density = labelProductTemplateDensity(intent.infoDensity);
+    const imageType = labelProductTemplateImageType(intent.imageType);
+    const bulletMax = intent.copy?.bulletCountMax ?? 3;
+    const titleLimit = typeof intent.copy?.titleCharLimit === 'number' ? `${intent.copy.titleCharLimit}字以内` : '不限制字数';
+    const allowPrice = intent.copy?.allowPrice ? '允许出现价格（{PRICE}）' : '禁止出现价格';
+    const allowBadge = intent.copy?.allowPromoBadge ? '允许促销角标（{BADGE}）' : '禁止促销角标';
+
+    lines.push(`1) 我想用于 ${platform}，尺寸/比例 ${size}${targetText}。`);
+    lines.push(`2) 图型/目的：${imageType}。信息密度：${density}。`);
+    lines.push(`3) 风格是 ${style}。`);
+    lines.push(`4) 文案结构：主标题 {TITLE}（${titleLimit}），副标题 {SUBTITLE}（可选），卖点最多 ${bulletMax} 条（用 {BULLET_1}..），行动文案 {CTA}（可选）。${allowBadge}；${allowPrice}。`);
+    lines.push(`5) 规则：主体使用 {PRODUCT}；禁止遮挡主体、贴边、过多装饰、夸张透视；留足安全边距，文字清晰可读。`);
+    return lines.join('\n');
+  };
+
+  const composeProductTemplateFinalBrief = (intent: ProductTemplateIntentV1, briefText: string, edited: boolean) => {
+    const base = buildProductTemplateBriefFromIntent(intent);
+    const extra = (briefText || '').trim();
+    if (!extra) return base;
+    if (!edited) return extra;
+    return `${base}\n\n补充说明：\n${extra}`;
+  };
+
+  const handlePolishProductTemplateBrief = async () => {
+    if (isPolishingProductTemplateBrief) return;
+    const raw = composeProductTemplateFinalBrief(productTemplateIntent, productTemplateBrief, true).trim();
+    if (!raw) {
+      toast.error('请先填写效果描述');
+      return;
+    }
+    setIsPolishingProductTemplateBrief(true);
+    try {
+      const polished = await polishFreeGenerationPrompt({
+        prompt: raw,
+        language: resolveBriefLanguage(raw),
+      });
+      setProductTemplateBrief(polished);
+      setIsProductTemplateBriefEdited(true);
+      toast.success('已优化效果描述');
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : '未知错误';
+      toast.error(`优化失败：${message}`);
+    } finally {
+      setIsPolishingProductTemplateBrief(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!productTemplateSettingsOpen) return;
+    if (isProductTemplateBriefEdited) return;
+    if ((productTemplateBrief || '').trim()) return;
+    setProductTemplateBrief(buildProductTemplateBriefFromIntent(productTemplateIntent));
+  }, [productTemplateSettingsOpen, productTemplateIntent, isProductTemplateBriefEdited, productTemplateBrief]);
 
   const assetsById = useMemo(() => new Map(smartLayoutAssets.map((a) => [a.id, a.dataUrl])), [smartLayoutAssets]);
   const getRefImageSrc = (z: LayoutZone) => (z.refImageId ? assetsById.get(z.refImageId) : z.refImage);
@@ -275,7 +559,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
       return true;
     }
   });
-  const [sidePanelTab, setSidePanelTab] = useState<'zone' | 'desc'>('zone');
+  const [sidePanelTab, setSidePanelTab] = useState<'zone' | 'copy'>('zone');
 
   useEffect(() => {
     try {
@@ -338,18 +622,74 @@ export function SmartLayoutView({ className }: { className?: string }) {
 
   const normalizedZones = useMemo(() => applyZoneEnrichment(zones), [zones, canvasSize.width, canvasSize.height]);
 
-  const resolvePromptVariables = (prompt: string) => {
-    const raw = (prompt || '').toString();
-    const product = (productValue || '').trim();
-    if (!raw.includes('{PRODUCT}')) return raw;
-    if (!product) return raw;
-    return raw.replaceAll('{PRODUCT}', product);
+  const normalizeCopyVariableKey = (keyRaw: string): CopyVariableKey | null => {
+    const key = (keyRaw || '').toString().trim();
+    if (
+      key === 'PRODUCT' ||
+      key === 'TITLE' ||
+      key === 'SUBTITLE' ||
+      key === 'CTA' ||
+      key === 'BADGE' ||
+      key === 'PRICE'
+    ) {
+      return key;
+    }
+    if (/^BULLET_[1-5]$/.test(key)) return key as CopyVariableKey;
+    return null;
   };
 
-  const requiresProductValue = useMemo(
-    () => normalizedZones.some((z) => (z.prompt || '').toString().includes('{PRODUCT}')),
-    [normalizedZones]
-  );
+  const labelCopyVariableKey = (key: CopyVariableKey) => {
+    if (key === 'PRODUCT') return '商品主体';
+    if (key === 'TITLE') return '主标题';
+    if (key === 'SUBTITLE') return '副标题';
+    if (key === 'CTA') return '行动文案';
+    if (key === 'BADGE') return '角标';
+    if (key === 'PRICE') return '价格';
+    if (key === 'BULLET_1') return '卖点 1';
+    if (key === 'BULLET_2') return '卖点 2';
+    if (key === 'BULLET_3') return '卖点 3';
+    if (key === 'BULLET_4') return '卖点 4';
+    return '卖点 5';
+  };
+
+  const extractCopyVariableKeysFromText = (text: string): CopyVariableKey[] => {
+    const raw = (text || '').toString();
+    const matches = raw.match(/\{[A-Z0-9_]+\}/g) ?? [];
+    const out: CopyVariableKey[] = [];
+    for (const m of matches) {
+      const k = normalizeCopyVariableKey(m.slice(1, -1));
+      if (k) out.push(k);
+    }
+    return out;
+  };
+
+  const requiredCopyKeys = useMemo(() => {
+    const set = new Set<CopyVariableKey>();
+    for (const z of normalizedZones) {
+      const keys = extractCopyVariableKeysFromText((z.prompt || '').toString());
+      for (const k of keys) set.add(k);
+    }
+    return Array.from(set);
+  }, [normalizedZones]);
+
+  const missingCopyKeys = useMemo(() => {
+    const miss: CopyVariableKey[] = [];
+    for (const k of requiredCopyKeys) {
+      const v = (copyVariables?.[k] ?? '').toString().trim();
+      if (!v) miss.push(k);
+    }
+    return miss;
+  }, [requiredCopyKeys, copyVariables]);
+
+  const resolvePromptVariables = (prompt: string) => {
+    const raw = (prompt || '').toString();
+    return raw.replace(/\{([A-Z0-9_]+)\}/g, (full, keyRaw) => {
+      const key = normalizeCopyVariableKey(keyRaw);
+      if (!key) return full;
+      const value = (copyVariables?.[key] ?? '').toString().trim();
+      return value ? value : full;
+    });
+  };
 
   const resolvedNormalizedZones = useMemo(
     () =>
@@ -357,20 +697,8 @@ export function SmartLayoutView({ className }: { className?: string }) {
         ...z,
         prompt: resolvePromptVariables((z.prompt || '').toString()),
       })),
-    [normalizedZones, productValue]
+    [normalizedZones, copyVariables]
   );
-
-  const handleUpdateZonePrompts = (updates: Array<{ id: string; prompt: string }>) => {
-    const byId = new Map(updates.map((u) => [u.id, u.prompt]));
-    setZones((prev) =>
-      applyZoneEnrichment(
-        prev.map((z) => {
-          if (!byId.has(z.id)) return z;
-          return { ...z, prompt: byId.get(z.id) || '' };
-        })
-      )
-    );
-  };
 
   useEffect(() => {
     setZones(prev => applyZoneEnrichment(prev));
@@ -390,8 +718,10 @@ export function SmartLayoutView({ className }: { className?: string }) {
     }
 
     try {
-      if (requiresProductValue && !(productValue || '').trim()) {
-        toast.error('请先填写商品主体（用于替换 {PRODUCT}）');
+      if (missingCopyKeys.length > 0) {
+        if (!sidePanelOpen) setSidePanelOpen(true);
+        setSidePanelTab('copy');
+        toast.error(`请先填写文案变量：${missingCopyKeys.map(labelCopyVariableKey).join('、')}`);
         return null;
       }
       const modelId = resolveModelId(generationContext.model);
@@ -583,9 +913,12 @@ export function SmartLayoutView({ className }: { className?: string }) {
       });
       const image = [data.generationSketch, ...data.referenceImages];
       const concurrencyLimit = 3;
+      const enableTwoStage = settings.enableTwoStageGeneration;
 
       if (resultSlots.length > 0) {
+        const prevRunId = currentRunIdRef.current;
         setResultHistory((prev) => {
+          if (prevRunId && prev.some((entry) => entry.id === prevRunId)) return prev;
           const entry: ResultHistoryEntry = {
             id: `history-${Date.now()}-${Math.random().toString(16).slice(2)}`,
             createdAt: Date.now(),
@@ -596,10 +929,24 @@ export function SmartLayoutView({ className }: { className?: string }) {
         });
       }
 
+      const runId = `run-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      currentRunIdRef.current = runId;
+      const initialSlots = Array.from({ length: requestedCount }, () => ({ status: 'pending' as const }));
+      setResultHistory((prev) => {
+        if (prev.some((entry) => entry.id === runId)) return prev;
+        const entry: ResultHistoryEntry = {
+          id: runId,
+          createdAt: Date.now(),
+          slots: initialSlots,
+          requestedImageCount: requestedCount,
+        };
+        return [entry, ...prev].slice(0, 20);
+      });
+
       setRequestedImageCount(requestedCount);
       setSelectedResultIndex(0);
       setActiveResultId('current');
-      setResultSlots(Array.from({ length: requestedCount }, () => ({ status: 'pending' })));
+      setResultSlots(initialSlots);
       setResultOpen(true);
       setPreviewOpen(false);
 
@@ -607,22 +954,32 @@ export function SmartLayoutView({ className }: { className?: string }) {
         setResultSlots((prev) => prev.map((slot, idx) => (idx === index ? { ...slot, ...patch } : slot)));
       };
 
-      if (requestedCount > 1 && group.sequential_image_generation !== 'auto') {
+      if (enableTwoStage && requestedCount > 1) {
+        toast.message('两阶段生成将自动分次生成以补齐张数');
+      } else if (requestedCount > 1 && group.sequential_image_generation !== 'auto') {
         toast.message('当前模型不支持一次生成多张，将自动分次生成以补齐张数');
       } else if (requestedCount > 1 && group.maxImages < requestedCount) {
         toast.message(`由于参考图数量限制，本次最多可组图生成 ${group.maxImages} 张，将自动补齐到 ${requestedCount} 张`);
       }
 
       const urls: string[] = [];
+      let didShowMockHint = false;
+      const maybeToastMock = (response: GenerateImageResponse) => {
+        if (didShowMockHint) return;
+        if (response?.code === 'mock') {
+          didShowMockHint = true;
+          toast.message(response.message || '当前为演示模式（Mock），未请求真实接口');
+        }
+      };
       const pushUrl = (slotIndex: number, url?: string) => {
         if (!url) return;
         urls.push(url);
-        updateSlot(slotIndex, { status: 'success', url, error: undefined });
+        updateSlot(slotIndex, { status: 'success', url, phase: 'final', error: undefined });
       };
 
       let filled = 0;
 
-      if (group.sequential_image_generation === 'auto' && !controller.signal.aborted) {
+      if (!enableTwoStage && group.sequential_image_generation === 'auto' && !controller.signal.aborted) {
         try {
           const response = await generateImage({
             prompt,
@@ -635,9 +992,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
             signal: controller.signal,
           });
           const nextUrls = response.data?.map((item) => item.url).filter((v): v is string => Boolean(v)) ?? [];
-          if (response.code === 'mock') {
-            toast.message(response.message || '当前为演示模式（Mock），未请求真实接口');
-          }
+          maybeToastMock(response);
           for (const u of nextUrls) {
             if (filled >= requestedCount) break;
             pushUrl(filled, u);
@@ -661,25 +1016,65 @@ export function SmartLayoutView({ className }: { className?: string }) {
           cursor += 1;
           if (next >= slotIndices.length) return;
           const slotIndex = slotIndices[next];
-          updateSlot(slotIndex, { status: 'processing', error: undefined });
+          updateSlot(slotIndex, { status: 'processing', phase: enableTwoStage ? 'draft' : undefined, error: undefined });
           try {
-            const response = await generateImage({
+            if (!enableTwoStage) {
+              const response = await generateImage({
+                prompt,
+                image,
+                size,
+                model: data.model,
+                sequential_image_generation: 'disabled',
+                stream: false,
+                signal: controller.signal,
+              });
+              maybeToastMock(response);
+              const url = response.data?.[0]?.url;
+              if (url) {
+                pushUrl(slotIndex, url);
+              } else {
+                updateSlot(slotIndex, { status: 'failed', error: response.message || '生成失败' });
+              }
+              continue;
+            }
+
+            const draftResponse = await generateImage({
               prompt,
-              image,
+              image: [data.generationSketch],
               size,
               model: data.model,
               sequential_image_generation: 'disabled',
               stream: false,
               signal: controller.signal,
             });
-            if (response.code === 'mock') {
-              toast.message(response.message || '当前为演示模式（Mock），未请求真实接口');
+            maybeToastMock(draftResponse);
+            const draftUrl = draftResponse.data?.[0]?.url;
+            if (!draftUrl) {
+              updateSlot(slotIndex, { status: 'failed', error: draftResponse.message || '构图阶段生成失败' });
+              continue;
             }
-            const url = response.data?.[0]?.url;
-            if (url) {
-              pushUrl(slotIndex, url);
+            updateSlot(slotIndex, { draftUrl, phase: 'refine' });
+            if (controller.signal.aborted) {
+              updateSlot(slotIndex, { status: 'cancelled', error: '已停止' });
+              return;
+            }
+
+            const refineImages = data.referenceImages?.length ? [draftUrl, ...data.referenceImages] : [draftUrl];
+            const refineResponse = await generateImage({
+              prompt,
+              image: refineImages,
+              size,
+              model: data.model,
+              sequential_image_generation: 'disabled',
+              stream: false,
+              signal: controller.signal,
+            });
+            maybeToastMock(refineResponse);
+            const finalUrl = refineResponse.data?.[0]?.url;
+            if (finalUrl) {
+              pushUrl(slotIndex, finalUrl);
             } else {
-              updateSlot(slotIndex, { status: 'failed', error: response.message || '生成失败' });
+              updateSlot(slotIndex, { status: 'failed', phase: 'refine', error: refineResponse.message || '精修阶段生成失败' });
             }
           } catch (error: unknown) {
             if (controller.signal.aborted) {
@@ -737,6 +1132,23 @@ export function SmartLayoutView({ className }: { className?: string }) {
     () => resultSlots.find((s) => s.url)?.url,
     [resultSlots]
   );
+  const hiddenHistoryId = resultSlots.length > 0 ? currentRunIdRef.current : null;
+  const visibleResultHistory = hiddenHistoryId ? resultHistory.filter((entry) => entry.id !== hiddenHistoryId) : resultHistory;
+
+  useEffect(() => {
+    const runId = currentRunIdRef.current;
+    if (!runId) return;
+    if (resultSlots.length === 0) return;
+    setResultHistory((prev) => {
+      const idx = prev.findIndex((entry) => entry.id === runId);
+      if (idx < 0) return prev;
+      const entry = prev[idx];
+      if (entry.slots === resultSlots && entry.requestedImageCount === requestedImageCount) return prev;
+      const next = [...prev];
+      next[idx] = { ...entry, slots: resultSlots, requestedImageCount };
+      return next;
+    });
+  }, [resultSlots, requestedImageCount]);
 
   useEffect(() => {
     setSelectedResultIndex(0);
@@ -750,12 +1162,18 @@ export function SmartLayoutView({ className }: { className?: string }) {
     const nextCanvasSize = t.payload.canvasSize;
     setCanvasSize(nextCanvasSize);
     setZones(applyZoneEnrichment(t.payload.zones || []));
-    setSettings(t.payload.settings);
+    setSettings(normalizeSettings(t.payload.settings));
+    setCopyVariables({ ...defaultCopyVariables, ...((t.payload.copyVariables as SmartLayoutCopyVariables) || {}) });
+    if (t.payload.productTemplateIntent && t.payload.productTemplateIntent.schemaVersion === 1) {
+      const v = t.payload.productTemplateIntent as ProductTemplateIntentV1;
+      setProductTemplateIntent({ ...defaultProductTemplateIntent, ...v, copy: { ...defaultProductTemplateIntent.copy, ...(v.copy || {}) } });
+    }
     if (t.payload.generationContextSnapshot) {
       updateGenerationContext(t.payload.generationContextSnapshot);
     }
     setSelectedZoneId(null);
     canvasRef.current?.clearSelection();
+    currentRunIdRef.current = null;
     setResultSlots([]);
     setRequestedImageCount(1);
     setSelectedResultIndex(0);
@@ -788,12 +1206,18 @@ export function SmartLayoutView({ className }: { className?: string }) {
     }
     setCanvasSize(draft.canvasSize);
     setZones(applyZoneEnrichment(draft.zones || []));
-    setSettings(draft.settings);
+    setSettings(normalizeSettings(draft.settings));
+    setCopyVariables({ ...defaultCopyVariables, ...((draft.copyVariables as SmartLayoutCopyVariables) || {}) });
+    if (draft.productTemplateIntent && draft.productTemplateIntent.schemaVersion === 1) {
+      const v = draft.productTemplateIntent as ProductTemplateIntentV1;
+      setProductTemplateIntent({ ...defaultProductTemplateIntent, ...v, copy: { ...defaultProductTemplateIntent.copy, ...(v.copy || {}) } });
+    }
     if (draft.generationContextSnapshot) {
       updateGenerationContext(draft.generationContextSnapshot);
     }
     setSelectedZoneId(null);
     canvasRef.current?.clearSelection();
+    currentRunIdRef.current = null;
     setResultSlots([]);
     setRequestedImageCount(1);
     setSelectedResultIndex(0);
@@ -837,6 +1261,8 @@ export function SmartLayoutView({ className }: { className?: string }) {
           canvasSize,
           zones: normalizedZones,
           settings,
+          copyVariables,
+          productTemplateIntent,
           generationContextSnapshot: generationContext,
         },
       });
@@ -1020,7 +1446,9 @@ export function SmartLayoutView({ className }: { className?: string }) {
 
   const handleConfirmMainCandidate = (candidate: MainCandidate) => {
     const product = (candidate.product || '').trim();
-    if (product && !(productValue || '').trim()) setProductValue(product);
+    if (product && !(copyVariables.PRODUCT || '').toString().trim()) {
+      setCopyVariables((prev) => ({ ...prev, PRODUCT: product }));
+    }
     applyMainCandidate(candidate);
     setMainConfirmOpen(false);
     setMainCandidates([]);
@@ -1031,6 +1459,20 @@ export function SmartLayoutView({ className }: { className?: string }) {
       setPendingParsedTemplateName(null);
     }
     toast.success('已更新主体区域');
+  };
+
+  const cancelParseTemplate = () => {
+    const controller = parseTemplateAbortRef.current;
+    if (!controller || controller.signal.aborted) return;
+    setParseTemplateCancelRequested(true);
+    controller.abort();
+  };
+
+  const cancelProductTemplateGeneration = () => {
+    const controller = productTemplateAbortRef.current;
+    if (!controller || controller.signal.aborted) return;
+    setProductTemplateCancelRequested(true);
+    controller.abort();
   };
 
   const handleParseTemplateImage = async (
@@ -1047,13 +1489,19 @@ export function SmartLayoutView({ className }: { className?: string }) {
     const controller = new AbortController();
     parseTemplateAbortRef.current = controller;
     setIsParsingTemplate(true);
+    setParseTemplateStageIndex(0);
+    setParseTemplateCancelRequested(false);
 
     try {
       const dataUrl = await readFileAsDataUrl(file);
       const nextCanvasSize = await resolveImageNaturalSize(dataUrl);
+      if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
       const outputLanguage = options?.outputLanguage ?? 'auto';
       const productHint = (options?.productHint || '').trim();
-      if (productHint && !(productValue || '').trim()) setProductValue(productHint);
+      if (productHint && !(copyVariables.PRODUCT || '').toString().trim()) {
+        setCopyVariables((prev) => ({ ...prev, PRODUCT: productHint }));
+      }
+      setParseTemplateStageIndex(1);
       const parsed = await parseSmartLayoutTemplateFromImage({
         image: dataUrl,
         outputLanguage,
@@ -1061,6 +1509,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
         signal: controller.signal,
       });
 
+      setParseTemplateStageIndex(2);
       const baseZones: LayoutZone[] = parsed.zones.map((z, idx) => {
         const x = Math.round(z.bboxNormalized.x * nextCanvasSize.width);
         const y = Math.round(z.bboxNormalized.y * nextCanvasSize.height);
@@ -1087,16 +1536,20 @@ export function SmartLayoutView({ className }: { className?: string }) {
         };
       });
 
+      setParseTemplateStageIndex(3);
       setCanvasSize(nextCanvasSize);
       setZones(baseZones);
       setSelectedZoneId(null);
       canvasRef.current?.clearSelection();
+      currentRunIdRef.current = null;
       setResultSlots([]);
       setRequestedImageCount(1);
       setSelectedResultIndex(0);
       setResultOpen(false);
       if (!sidePanelOpen) setSidePanelOpen(true);
-      if (!(productValue || '').trim() && (parsed.product || '').trim()) setProductValue((parsed.product || '').trim());
+      if (!(copyVariables.PRODUCT || '').toString().trim() && (parsed.product || '').trim()) {
+        setCopyVariables((prev) => ({ ...prev, PRODUCT: (parsed.product || '').trim() }));
+      }
       setMainCandidates((parsed.mainCandidates || []) as MainCandidate[]);
       setMainConfidence(typeof parsed.mainConfidence === 'number' ? parsed.mainConfidence : null);
       setMainReason((parsed.mainReason || '').toString());
@@ -1121,8 +1574,207 @@ export function SmartLayoutView({ className }: { className?: string }) {
       }
     } finally {
       setIsParsingTemplate(false);
+      setParseTemplateStageIndex(0);
+      setParseTemplateCancelRequested(false);
       parseTemplateAbortRef.current = null;
       if (parseTemplateImageInputRef.current) parseTemplateImageInputRef.current.value = '';
+    }
+  };
+
+  const handleGenerateTemplateFromProductImage = async (
+    file: File,
+    options?: { outputLanguage?: 'auto' | 'zh' | 'en'; productHint?: string; brief?: string; intent?: ProductTemplateIntentV1 }
+  ) => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('请上传图片文件');
+      return;
+    }
+    const intent =
+      options?.intent && options.intent.schemaVersion === 1
+        ? { ...defaultProductTemplateIntent, ...options.intent, copy: { ...defaultProductTemplateIntent.copy, ...(options.intent.copy || {}) } }
+        : productTemplateIntent;
+    const briefRaw = (options?.brief || '').trim();
+    const brief = briefRaw || buildProductTemplateBriefFromIntent(intent);
+    if (!brief.trim()) {
+      toast.error('请先填写效果描述');
+      return;
+    }
+    if (isGeneratingProductTemplate) return;
+
+    productTemplateAbortRef.current?.abort();
+    const controller = new AbortController();
+    productTemplateAbortRef.current = controller;
+    setIsGeneratingProductTemplate(true);
+    setProductTemplateStageIndex(0);
+    setProductTemplateCancelRequested(false);
+
+    try {
+      setProductTemplateIntent(intent);
+      const dataUrl = await readFileAsDataUrl(file);
+      const naturalCanvasSize = await resolveImageNaturalSize(dataUrl);
+      const targetWRaw = intent.targetCanvasSizePx?.width;
+      const targetHRaw = intent.targetCanvasSizePx?.height;
+      const clamp = (n: number) => Math.max(200, Math.min(10000, Math.round(n)));
+      const hasTarget =
+        typeof targetWRaw === 'number' &&
+        typeof targetHRaw === 'number' &&
+        Number.isFinite(targetWRaw) &&
+        Number.isFinite(targetHRaw) &&
+        targetWRaw > 0 &&
+        targetHRaw > 0;
+      const nextCanvasSize = hasTarget ? { width: clamp(targetWRaw), height: clamp(targetHRaw) } : naturalCanvasSize;
+      if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      const outputLanguage = options?.outputLanguage ?? 'auto';
+      const productHint = (options?.productHint || '').trim();
+      if (productHint && !(copyVariables.PRODUCT || '').toString().trim()) {
+        setCopyVariables((prev) => ({ ...prev, PRODUCT: productHint }));
+      }
+      setProductTemplateStageIndex(1);
+      const parsed = await generateSmartLayoutTemplateFromProductImage({
+        image: dataUrl,
+        brief,
+        outputLanguage,
+        productHint,
+        intent,
+        signal: controller.signal,
+      });
+
+      setProductTemplateStageIndex(2);
+      const baseZones: LayoutZone[] = parsed.zones.map((z, idx) => {
+        const x = Math.round(z.bboxNormalized.x * nextCanvasSize.width);
+        const y = Math.round(z.bboxNormalized.y * nextCanvasSize.height);
+        const width = Math.round(z.bboxNormalized.w * nextCanvasSize.width);
+        const height = Math.round(z.bboxNormalized.h * nextCanvasSize.height);
+        const baseZIndex =
+          typeof z.zIndex === 'number'
+            ? z.zIndex
+            : z.type === 'background'
+              ? 0
+              : z.type === 'main'
+                ? 1
+                : 2 + idx;
+        return {
+          id: createId(),
+          x,
+          y,
+          width,
+          height,
+          zIndex: baseZIndex,
+          type: z.type,
+          semanticColor: SEMANTIC_COLORS[z.type],
+          prompt: z.prompt,
+        };
+      });
+
+      setProductTemplateStageIndex(3);
+      setCanvasSize(nextCanvasSize);
+      setZones(baseZones);
+      setSelectedZoneId(null);
+      canvasRef.current?.clearSelection();
+      currentRunIdRef.current = null;
+      setResultSlots([]);
+      setRequestedImageCount(1);
+      setSelectedResultIndex(0);
+      setResultOpen(false);
+      if (!sidePanelOpen) setSidePanelOpen(true);
+      if (!(copyVariables.PRODUCT || '').toString().trim() && (parsed.product || '').trim()) {
+        setCopyVariables((prev) => ({ ...prev, PRODUCT: (parsed.product || '').trim() }));
+      }
+      setMainCandidates((parsed.mainCandidates || []) as MainCandidate[]);
+      setMainConfidence(typeof parsed.mainConfidence === 'number' ? parsed.mainConfidence : null);
+      setMainReason((parsed.mainReason || '').toString());
+
+      const parsedCopyVariables = parsed.copyVariables && Object.keys(parsed.copyVariables).length > 0 ? parsed.copyVariables : undefined;
+      if (parsedCopyVariables) {
+        setCopyVariables((prev) => {
+          const next: SmartLayoutCopyVariables = { ...defaultCopyVariables, ...parsedCopyVariables };
+          const resolvedProduct =
+            productHint ||
+            (next.PRODUCT || '').toString().trim() ||
+            (parsed.product || '').trim() ||
+            (prev.PRODUCT || '').toString().trim();
+          if (resolvedProduct) next.PRODUCT = resolvedProduct;
+          const bulletMax = intent.copy?.bulletCountMax ?? 3;
+          for (let i = 1; i <= 5; i += 1) {
+            const key = `BULLET_${i}` as keyof SmartLayoutCopyVariables;
+            if (i > bulletMax) next[key] = '';
+          }
+          if (intent.copy?.allowPromoBadge === false) next.BADGE = '';
+          if (intent.copy?.allowPrice === false) next.PRICE = '';
+          return next;
+        });
+        if (!sidePanelOpen) setSidePanelOpen(true);
+        setSidePanelTab('copy');
+        toast.message('已生成推荐文案变量');
+      } else {
+        try {
+          const suggested = await suggestSmartLayoutCopyVariables({
+            intent,
+            language: resolveBriefLanguage(brief),
+            product: (productHint || parsed.product || '').trim() || (copyVariables.PRODUCT || '').toString().trim(),
+            brief,
+          });
+          setCopyVariables((prev) => {
+            const next: SmartLayoutCopyVariables = { ...defaultCopyVariables };
+            const bulletMax = intent.copy?.bulletCountMax ?? 3;
+            const setIfPresent = (k: keyof SmartLayoutCopyVariables, v: unknown) => {
+              const raw = typeof v === 'string' ? v.trim() : '';
+              if (raw) next[k] = raw;
+            };
+            setIfPresent('TITLE', (suggested as any).TITLE);
+            setIfPresent('SUBTITLE', (suggested as any).SUBTITLE);
+            setIfPresent('CTA', (suggested as any).CTA);
+            setIfPresent('BADGE', (suggested as any).BADGE);
+            setIfPresent('PRICE', (suggested as any).PRICE);
+            for (let i = 1; i <= 5; i += 1) {
+              const key = `BULLET_${i}` as keyof SmartLayoutCopyVariables;
+              if (i <= bulletMax) setIfPresent(key, (suggested as any)[`BULLET_${i}`]);
+              else next[key] = '';
+            }
+            if (intent.copy?.allowPromoBadge === false) next.BADGE = '';
+            if (intent.copy?.allowPrice === false) next.PRICE = '';
+            const resolvedProduct =
+              productHint ||
+              (parsed.product || '').trim() ||
+              (prev.PRODUCT || '').toString().trim();
+            if (resolvedProduct) next.PRODUCT = resolvedProduct;
+            return next;
+          });
+          if (!sidePanelOpen) setSidePanelOpen(true);
+          setSidePanelTab('copy');
+          toast.message('已生成推荐文案变量');
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : '';
+          if (message.includes('VITE_BIGMODEL_API_KEY')) {
+            toast.message('未配置文案模型 Key，未生成推荐文案变量');
+          }
+        }
+      }
+
+      toast.success('已生成模板，已加载到画布');
+      const fallbackName = `从商品图生成 ${file.name.replace(/\.[^.]+$/, '')}`.trim();
+      const shouldConfirmMain =
+        (parsed.mainCandidates || []).length > 0 &&
+        (typeof parsed.mainConfidence !== 'number' || parsed.mainConfidence < 0.8);
+      if (shouldConfirmMain) {
+        setPendingParsedTemplateName(parsed.name || fallbackName);
+        setMainConfirmOpen(true);
+      } else {
+        openSaveTemplateDialog(parsed.name || fallbackName);
+      }
+    } catch (e: unknown) {
+      if (controller.signal.aborted) {
+        toast.message('已取消生成');
+      } else {
+        const message = e instanceof Error ? e.message : '未知错误';
+        toast.error(`生成失败：${message}`);
+      }
+    } finally {
+      setIsGeneratingProductTemplate(false);
+      setProductTemplateStageIndex(0);
+      setProductTemplateCancelRequested(false);
+      productTemplateAbortRef.current = null;
+      if (productTemplateImageInputRef.current) productTemplateImageInputRef.current.value = '';
     }
   };
 
@@ -1136,6 +1788,8 @@ export function SmartLayoutView({ className }: { className?: string }) {
         canvasSize,
         zones: normalizedZones,
         settings,
+        copyVariables,
+        productTemplateIntent,
         generationContextSnapshot: generationContext,
       });
       setDraftExists(true);
@@ -1143,7 +1797,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
     return () => {
       if (draftSaveTimerRef.current) window.clearTimeout(draftSaveTimerRef.current);
     };
-  }, [zones.length, normalizedZones, canvasSize, settings, generationContext]);
+  }, [zones.length, normalizedZones, canvasSize, settings, copyVariables, productTemplateIntent, generationContext]);
 
   return (
     <div
@@ -1155,6 +1809,26 @@ export function SmartLayoutView({ className }: { className?: string }) {
         className={["relative w-full rounded-xl border border-white/10 bg-[#0a0a0f] overflow-hidden shadow-inner", rootHeightClass, className].filter(Boolean).join(' ')}
         style={rootHeightStyle}
       >
+        <ProgressOverlay
+          open={isGeneratingProductTemplate}
+          title="正在生成布局…"
+          description={productTemplateCancelRequested ? '正在取消本次生成，请稍候…' : '正在分析商品图并生成布局分区'}
+          stages={productTemplateProgressStages}
+          activeStageIndex={Math.min(productTemplateStageIndex, productTemplateProgressStages.length - 1)}
+          cancelLabel={productTemplateCancelRequested ? '正在取消…' : '取消'}
+          cancelDisabled={productTemplateCancelRequested}
+          onCancel={cancelProductTemplateGeneration}
+        />
+        <ProgressOverlay
+          open={isParsingTemplate}
+          title="正在解析模板…"
+          description={parseTemplateCancelRequested ? '正在取消本次解析，请稍候…' : '正在分析图片并生成布局分区'}
+          stages={parseTemplateProgressStages}
+          activeStageIndex={Math.min(parseTemplateStageIndex, parseTemplateProgressStages.length - 1)}
+          cancelLabel={parseTemplateCancelRequested ? '正在取消…' : '取消'}
+          cancelDisabled={parseTemplateCancelRequested}
+          onCancel={cancelParseTemplate}
+        />
       <div className="absolute top-0 left-0 right-0 h-14 bg-[#14141a] border-b border-white/10 flex items-center justify-between px-4 z-10 shadow-sm">
         <div className="flex items-center gap-3">
           <span className="font-semibold text-white">智能布局画布</span>
@@ -1225,16 +1899,16 @@ export function SmartLayoutView({ className }: { className?: string }) {
               <div className="px-2 pb-2">
                 <div className="flex items-center gap-2">
                   <Input
-                    value={productValue}
-                    onChange={(e) => setProductValue(e.target.value)}
+                    value={(copyVariables.PRODUCT || '').toString()}
+                    onChange={(e) => setCopyVariables((prev) => ({ ...prev, PRODUCT: e.target.value }))}
                     className="h-8 flex-1 bg-white/5 border-white/10 text-white"
                     placeholder="用于替换 {PRODUCT}"
                   />
                   <Button
                     variant="ghost"
                     size="icon"
-                    disabled={!productValue.trim()}
-                    onClick={() => setProductValue('')}
+                    disabled={!(copyVariables.PRODUCT || '').toString().trim()}
+                    onClick={() => setCopyVariables((prev) => ({ ...prev, PRODUCT: '' }))}
                     className="h-8 w-8 text-white/60 hover:text-white hover:bg-white/10 disabled:opacity-30"
                   >
                     <XCircle className="h-4 w-4" />
@@ -1284,8 +1958,14 @@ export function SmartLayoutView({ className }: { className?: string }) {
               >
                 DEPTH 树
               </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={settings.enableTwoStageGeneration}
+                onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableTwoStageGeneration: Boolean(checked) }))}
+              >
+                两阶段生成
+              </DropdownMenuCheckboxItem>
 
-              {(resultSlots.length > 0 || resultHistory.length > 0) ? (
+              {(resultSlots.length > 0 || visibleResultHistory.length > 0) ? (
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuLabel className="text-white/70">历史记录</DropdownMenuLabel>
@@ -1299,8 +1979,8 @@ export function SmartLayoutView({ className }: { className?: string }) {
                   >
                     当前结果
                   </DropdownMenuItem>
-                  {resultHistory.length > 0 && <DropdownMenuSeparator />}
-                  {resultHistory.map((entry) => (
+                  {visibleResultHistory.length > 0 && <DropdownMenuSeparator />}
+                  {visibleResultHistory.map((entry) => (
                     <DropdownMenuItem
                       key={entry.id}
                       onSelect={(e) => {
@@ -1325,6 +2005,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="bg-[#1c1c21] border-white/10 text-white">
+              <DropdownMenuLabel className="text-white/70">模板</DropdownMenuLabel>
               <DropdownMenuItem onSelect={(e) => { e.preventDefault(); handleOpenSaveTemplate(); }}>
                 <Save className="h-4 w-4" />
                 保存为模板
@@ -1333,17 +2014,30 @@ export function SmartLayoutView({ className }: { className?: string }) {
                 <FolderOpen className="h-4 w-4" />
                 打开模板库
               </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-white/70">填充画布</DropdownMenuLabel>
               <DropdownMenuItem
-                disabled={isParsingTemplate || isGenerating}
+                disabled={isParsingTemplate || isGenerating || isGeneratingProductTemplate}
                 onSelect={(e) => {
                   e.preventDefault();
                   setParseTemplateSettingsOpen(true);
                 }}
               >
                 <Upload className="h-4 w-4" />
-                {isParsingTemplate ? '解析中...' : '从图片解析模板'}
+                {isParsingTemplate ? '解析中...' : '从商品原型生成画布'}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={isGeneratingProductTemplate || isGenerating || isParsingTemplate}
+                onSelect={(e) => {
+                  e.preventDefault();
+                  setProductTemplateSettingsOpen(true);
+                }}
+              >
+                <Wand2 className="h-4 w-4" />
+                {isGeneratingProductTemplate ? '生成中...' : '从商品设计图复刻布局'}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-white/70">草稿</DropdownMenuLabel>
               <DropdownMenuItem
                 disabled={!draftExists}
                 onSelect={(e) => {
@@ -1369,6 +2063,8 @@ export function SmartLayoutView({ className }: { className?: string }) {
                 <Trash2 className="h-4 w-4" />
                 清除草稿
               </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-white/70">本地缓存</DropdownMenuLabel>
               <DropdownMenuItem
                 onSelect={(e) => {
                   e.preventDefault();
@@ -1381,6 +2077,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
                 清空素材库缓存
               </DropdownMenuItem>
               <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-white/70">导入/导出</DropdownMenuLabel>
               <DropdownMenuItem onSelect={(e) => { e.preventDefault(); handleExportAllTemplates(); }}>
                 <Download className="h-4 w-4" />
                 导出全部模板
@@ -1397,6 +2094,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
             size="sm"
             onClick={() => {
               setZones([]);
+              currentRunIdRef.current = null;
               setResultSlots([]);
               setRequestedImageCount(1);
               setSelectedResultIndex(0);
@@ -1474,9 +2172,88 @@ export function SmartLayoutView({ className }: { className?: string }) {
           if (file) void handleParseTemplateImage(file, parseTemplateOptionsRef.current);
         }}
       />
+      <input
+        ref={productTemplateImageInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleGenerateTemplateFromProductImage(file, productTemplateOptionsRef.current);
+        }}
+      />
 
       <div className="absolute top-14 left-0 right-0 bottom-0 overflow-hidden bg-[#0a0a0f]">
         <div className="h-full flex overflow-hidden">
+          <div className="w-14 shrink-0 bg-[#101016] border-r border-white/10 flex flex-col items-center py-3 gap-2 overflow-y-auto">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    refreshTemplates();
+                    setTemplatesOpen(true);
+                  }}
+                  className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10"
+                >
+                  <FolderOpen className="h-5 w-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>模板库</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => handleOpenSaveTemplate()}
+                  className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10"
+                >
+                  <Save className="h-5 w-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>保存模板</TooltipContent>
+            </Tooltip>
+
+            <div className="w-8 h-px bg-white/10 my-1" />
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  disabled={isParsingTemplate || isGenerating || isGeneratingProductTemplate}
+                  onClick={() => setParseTemplateSettingsOpen(true)}
+                  className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10 disabled:opacity-30"
+                >
+                  <Upload className="h-5 w-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>
+                {isParsingTemplate ? '解析中...' : '从商品原型生成画布'}
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  disabled={isGeneratingProductTemplate || isGenerating || isParsingTemplate}
+                  onClick={() => setProductTemplateSettingsOpen(true)}
+                  className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10 disabled:opacity-30"
+                >
+                  <Wand2 className="h-5 w-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>
+                {isGeneratingProductTemplate ? '生成中...' : '从商品设计图复刻布局'}
+              </TooltipContent>
+            </Tooltip>
+          </div>
+
           <div className="flex-1 min-w-0 min-h-0 overflow-auto p-6">
             <div className="min-w-max min-h-max flex items-center justify-center p-2">
               <SmartCanvas
@@ -1516,11 +2293,11 @@ export function SmartLayoutView({ className }: { className?: string }) {
             </div>
 
             {sidePanelOpen ? (
-              <Tabs value={sidePanelTab} onValueChange={(v) => setSidePanelTab(v as 'zone' | 'desc')} className="h-[calc(100%-48px)]">
+              <Tabs value={sidePanelTab} onValueChange={(v) => setSidePanelTab(v as 'zone' | 'copy')} className="h-[calc(100%-48px)]">
                 <div className="px-2 pt-2">
                   <TabsList className="w-full bg-white/5">
                     <TabsTrigger value="zone" className="flex-1">区域</TabsTrigger>
-                    <TabsTrigger value="desc" className="flex-1">布局描述</TabsTrigger>
+                    <TabsTrigger value="copy" className="flex-1">文案</TabsTrigger>
                   </TabsList>
                 </div>
 
@@ -1572,13 +2349,11 @@ export function SmartLayoutView({ className }: { className?: string }) {
                   )}
                 </TabsContent>
 
-                <TabsContent value="desc" className="h-[calc(100%-56px)] mt-2 px-3 pb-3 overflow-auto">
-                  <LayoutDescriptionPanel
-                    zones={normalizedZones}
-                    previewZones={resolvedNormalizedZones}
-                    settings={settings}
-                    className="border-0 bg-transparent"
-                    onUpdateZonePrompts={handleUpdateZonePrompts}
+                <TabsContent value="copy" className="h-[calc(100%-56px)] mt-2 px-3 pb-3 overflow-auto">
+                  <CopyVariablesPanel
+                    variables={copyVariables}
+                    requiredKeys={requiredCopyKeys}
+                    onChange={(next) => setCopyVariables(next)}
                   />
                 </TabsContent>
               </Tabs>
@@ -1600,11 +2375,11 @@ export function SmartLayoutView({ className }: { className?: string }) {
                   size="icon"
                   onClick={() => {
                     setSidePanelOpen(true);
-                    setSidePanelTab('desc');
+                    setSidePanelTab('copy');
                   }}
                   className="h-10 w-10 text-white/60 hover:text-white hover:bg-white/10"
                 >
-                  描
+                  文
                 </Button>
               </div>
             )}
@@ -1615,7 +2390,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
 
       <div className="w-full rounded-xl border border-white/10 bg-[#111116] px-4 py-4">
         <div className="text-xs text-white/60 mb-3">生成历史记录</div>
-        {resultHistory.length === 0 && resultSlots.length === 0 ? (
+        {visibleResultHistory.length === 0 && resultSlots.length === 0 ? (
           <div className="text-xs text-white/40">暂无历史记录</div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -1638,7 +2413,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
                 </div>
               </button>
             )}
-            {resultHistory.map((entry) => {
+            {visibleResultHistory.map((entry) => {
               const previewUrl = entry.slots.find((s) => s.url)?.url;
               return (
                 <button
@@ -1713,22 +2488,50 @@ export function SmartLayoutView({ className }: { className?: string }) {
            {displaySlots.length > 0 ? (
              <div className="w-full">
                <div className="w-full flex items-center justify-center">
-                 {selectedResult?.status === 'success' && selectedResult.url ? (
+                {selectedResult?.url ? (
                    <img
                      src={selectedResult.url}
                      alt="result"
                      className="max-h-[60vh] w-auto object-contain rounded-md border border-white/10"
                    />
+                ) : selectedResult?.draftUrl ? (
+                  <div className="relative">
+                    <img
+                      src={selectedResult.draftUrl}
+                      alt="draft"
+                      className="max-h-[60vh] w-auto object-contain rounded-md border border-white/10"
+                    />
+                    <div className="absolute top-2 left-2 px-2 py-1 rounded bg-black/60 text-[11px] text-white/80">
+                      构图草稿
+                    </div>
+                    {selectedResult.status !== 'failed' && selectedResult.status !== 'cancelled' ? (
+                      <div className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded bg-black/60 text-[11px] text-white/80">
+                        <Spinner className="size-3 text-white/70" />
+                        {selectedResult.phase === 'refine' ? '精修中' : '构图中'}
+                      </div>
+                    ) : null}
+                  </div>
                  ) : (
                    <div className="h-[320px] w-full rounded-md border border-white/10 bg-white/5 flex flex-col items-center justify-center gap-2 text-white/70">
                      {selectedResult?.status === 'failed' ? <XCircle className="h-5 w-5 text-rose-300" /> : <Spinner className="size-5 text-white/60" />}
                      <div className="text-sm">
-                       {selectedResult?.status === 'failed' ? '生成失败' : selectedResult?.status === 'cancelled' ? '已停止' : '生成中...'}
+                      {selectedResult?.status === 'failed'
+                        ? '生成失败'
+                        : selectedResult?.status === 'cancelled'
+                          ? '已停止'
+                          : selectedResult?.phase === 'refine'
+                            ? '精修中...'
+                            : selectedResult?.phase === 'draft'
+                              ? '构图中...'
+                              : '生成中...'}
                      </div>
                      {selectedResult?.error ? <div className="text-xs text-white/45 max-w-[720px] px-4 text-center break-words">{selectedResult.error}</div> : null}
                    </div>
                  )}
                </div>
+              {selectedResult?.draftUrl && selectedResult?.status === 'failed' && selectedResult?.error ? (
+                <div className="mt-3 text-xs text-white/45 text-center break-words">{selectedResult.error}</div>
+              ) : null}
               {displaySlots.length > 1 ? (
                  <div className="mt-4 grid grid-cols-4 sm:grid-cols-6 gap-2">
                   {displaySlots.map((slot, idx) => (
@@ -1744,13 +2547,33 @@ export function SmartLayoutView({ className }: { className?: string }) {
                        ].join(' ')}
                      >
                        <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/50 text-[10px] text-white/70">{idx + 1}</div>
-                       {slot.status === 'success' && slot.url ? (
+                      {slot.url ? (
                          <img src={slot.url} alt={`result-${idx + 1}`} className="w-full h-full object-cover" />
+                      ) : slot.draftUrl ? (
+                        <>
+                          <img src={slot.draftUrl} alt={`draft-${idx + 1}`} className="w-full h-full object-cover" />
+                          <div className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/55 text-[10px] text-white/75">
+                            草稿
+                          </div>
+                          {slot.status !== 'failed' && slot.status !== 'cancelled' ? (
+                            <div className="absolute top-1 right-1 px-1.5 py-0.5 rounded bg-black/55 text-[10px] text-white/75">
+                              {slot.phase === 'refine' ? '精修' : '构图'}
+                            </div>
+                          ) : null}
+                        </>
                        ) : (
                          <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-white/60">
                            {slot.status === 'failed' ? <XCircle className="h-5 w-5 text-rose-300" /> : <Spinner className="size-5 text-white/60" />}
                            <div className="text-[11px]">
-                             {slot.status === 'failed' ? '失败' : slot.status === 'cancelled' ? '已停止' : '生成中'}
+                            {slot.status === 'failed'
+                              ? '失败'
+                              : slot.status === 'cancelled'
+                                ? '已停止'
+                                : slot.phase === 'refine'
+                                  ? '精修中'
+                                  : slot.phase === 'draft'
+                                    ? '构图中'
+                                    : '生成中'}
                            </div>
                          </div>
                        )}
@@ -1762,11 +2585,11 @@ export function SmartLayoutView({ className }: { className?: string }) {
            ) : (
              <div className="text-white/60 text-sm">暂无结果</div>
            )}
-          {resultHistory.length > 0 && (
+          {visibleResultHistory.length > 0 && (
             <div className="border-t border-white/10 px-4 py-3">
               <div className="text-xs text-white/60 mb-2">历史记录</div>
               <div className="flex gap-2 overflow-x-auto pb-1">
-                {[{ id: 'current', label: '当前结果', slots: resultSlots }, ...resultHistory.map((entry) => ({
+                {[{ id: 'current', label: '当前结果', slots: resultSlots }, ...visibleResultHistory.map((entry) => ({
                   id: entry.id,
                   label: new Date(entry.createdAt).toLocaleString(),
                   slots: entry.slots,
@@ -2014,6 +2837,419 @@ export function SmartLayoutView({ className }: { className?: string }) {
            </div>
          </DialogContent>
        </Dialog>
+
+      <Dialog open={productTemplateSettingsOpen} onOpenChange={setProductTemplateSettingsOpen}>
+        <DialogContent className="sm:max-w-[720px] max-h-[85vh] overflow-y-auto bg-[#14141a] border-white/10 text-white">
+          <DialogHeader>
+            <DialogTitle>商品图生成模板</DialogTitle>
+            <DialogDescription className="sr-only">上传商品图与效果描述生成布局模板</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Accordion
+              type="single"
+              collapsible
+              value={productTemplateIntentAdvancedOpen ? 'intent' : undefined}
+              onValueChange={(v) => setProductTemplateIntentAdvancedOpen(v === 'intent')}
+              className="rounded-lg border border-white/10 bg-white/5"
+            >
+              <AccordionItem value="intent" className="border-0">
+                <AccordionTrigger className="py-3 px-3 hover:no-underline">
+                  <div className="w-full">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-xs text-white/75 shrink-0">高级意图</div>
+                      <div className="flex flex-wrap justify-end gap-1.5">
+                        {[
+                          labelProductTemplateImageType(productTemplateIntent.imageType).split('（')[0],
+                          productTemplateIntent.platformId ? labelProductTemplatePlatform(productTemplateIntent.platformId) : '不限平台',
+                          productTemplateIntent.sizePreset ? labelProductTemplateSizePreset(productTemplateIntent.sizePreset) : '不限比例',
+                          `密度${labelProductTemplateDensity(productTemplateIntent.infoDensity)}`,
+                          productTemplateIntent.stylePreset ? labelProductTemplateStyle(productTemplateIntent.stylePreset) : '中性',
+                          `卖点≤${productTemplateIntent.copy?.bulletCountMax ?? 3}`,
+                        ].map((t) => (
+                          <Badge key={t} variant="secondary" className="bg-white/10 text-white/75 border border-white/10">
+                            {t}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="mt-1 text-[11px] text-white/45">可展开配置，用于更稳定生成模板，并让 AI 优化更贴合目标。</div>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="px-3 pb-3">
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <div className="text-xs text-white/70">意图卡</div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setProductTemplateBrief(buildProductTemplateBriefFromIntent(productTemplateIntent));
+                          setIsProductTemplateBriefEdited(false);
+                        }}
+                        className="h-7 border-white/10 text-white/80 hover:text-white hover:bg-white/10"
+                      >
+                        写入描述
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const built = buildProductTemplateBriefFromIntent(productTemplateIntent);
+                          setProductTemplateBrief((prev) => {
+                            const raw = (prev || '').trim();
+                            return raw ? `${raw}\n\n${built}` : built;
+                          });
+                          setIsProductTemplateBriefEdited(true);
+                        }}
+                        className="h-7 border-white/10 text-white/80 hover:text-white hover:bg-white/10"
+                      >
+                        追加
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3">
+                    <div className="rounded-md border border-white/10 bg-[#14141a] px-3 py-2">
+                      <div className="text-xs text-white/60 mb-2">图型</div>
+                      <ToggleGroup
+                        type="single"
+                        value={productTemplateIntent.imageType}
+                        onValueChange={(v) => {
+                          if (!v) return;
+                          setProductTemplateIntent((prev) => ({ ...prev, imageType: v as ProductTemplateImageType }));
+                        }}
+                        variant="outline"
+                        size="sm"
+                        spacing={0}
+                        className="flex flex-wrap"
+                      >
+                        <ToggleGroupItem value="main">主图</ToggleGroupItem>
+                        <ToggleGroupItem value="detail">详情</ToggleGroupItem>
+                        <ToggleGroupItem value="comparison">对比</ToggleGroupItem>
+                        <ToggleGroupItem value="size">尺寸</ToggleGroupItem>
+                        <ToggleGroupItem value="scene">场景</ToggleGroupItem>
+                      </ToggleGroup>
+                    </div>
+
+                    <div className="rounded-md border border-white/10 bg-[#14141a] px-3 py-2">
+                      <div className="text-xs text-white/60 mb-2">平台与尺寸</div>
+                      <div className="space-y-2">
+                        <ToggleGroup
+                          type="single"
+                          value={productTemplateIntent.platformId || 'none'}
+                          onValueChange={(v) => {
+                            if (!v) return;
+                            if (v === 'none') {
+                              setProductTemplateIntent((prev) => ({ ...prev, platformId: undefined }));
+                              return;
+                            }
+                            setProductTemplateIntent((prev) => ({ ...prev, platformId: v as ProductTemplatePlatformId }));
+                          }}
+                          variant="outline"
+                          size="sm"
+                          spacing={0}
+                          className="flex flex-wrap"
+                        >
+                          <ToggleGroupItem value="amazon">Amazon</ToggleGroupItem>
+                          <ToggleGroupItem value="temu">Temu</ToggleGroupItem>
+                          <ToggleGroupItem value="tiktok">TikTok</ToggleGroupItem>
+                          <ToggleGroupItem value="shopee">Shopee</ToggleGroupItem>
+                          <ToggleGroupItem value="none">不限</ToggleGroupItem>
+                        </ToggleGroup>
+                        <ToggleGroup
+                          type="single"
+                          value={productTemplateIntent.sizePreset || 'none'}
+                          onValueChange={(v) => {
+                            if (!v) return;
+                            if (v === 'none') {
+                              setProductTemplateIntent((prev) => ({ ...prev, sizePreset: undefined }));
+                              return;
+                            }
+                            setProductTemplateIntent((prev) => ({ ...prev, sizePreset: v as ProductTemplateSizePreset }));
+                          }}
+                          variant="outline"
+                          size="sm"
+                          spacing={0}
+                          className="flex flex-wrap"
+                        >
+                          <ToggleGroupItem value="none">不限</ToggleGroupItem>
+                          <ToggleGroupItem value="1:1">1:1</ToggleGroupItem>
+                          <ToggleGroupItem value="3:4">3:4</ToggleGroupItem>
+                          <ToggleGroupItem value="4:5">4:5</ToggleGroupItem>
+                          <ToggleGroupItem value="16:9">16:9</ToggleGroupItem>
+                          <ToggleGroupItem value="9:16">9:16</ToggleGroupItem>
+                          <ToggleGroupItem value="long">长图</ToggleGroupItem>
+                        </ToggleGroup>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <div className="text-[11px] text-white/50">目标宽(px)</div>
+                            <Input
+                              value={
+                                typeof productTemplateIntent.targetCanvasSizePx?.width === 'number'
+                                  ? String(productTemplateIntent.targetCanvasSizePx.width)
+                                  : ''
+                              }
+                              onChange={(e) => {
+                                const raw = e.target.value;
+                                const n = Number(raw);
+                                setProductTemplateIntent((prev) => {
+                                  const nextSize = { ...(prev.targetCanvasSizePx || {}) } as { width?: number; height?: number };
+                                  if (!raw.trim()) {
+                                    delete nextSize.width;
+                                  } else if (Number.isFinite(n) && n > 0) {
+                                    nextSize.width = Math.round(n);
+                                  } else {
+                                    nextSize.width = undefined;
+                                  }
+                                  const keep = typeof nextSize.width === 'number' || typeof nextSize.height === 'number';
+                                  return { ...prev, targetCanvasSizePx: keep ? nextSize : undefined };
+                                });
+                              }}
+                              className="h-8 bg-white/5 border-white/10 text-white"
+                              inputMode="numeric"
+                              placeholder="留空"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <div className="text-[11px] text-white/50">目标高(px)</div>
+                            <Input
+                              value={
+                                typeof productTemplateIntent.targetCanvasSizePx?.height === 'number'
+                                  ? String(productTemplateIntent.targetCanvasSizePx.height)
+                                  : ''
+                              }
+                              onChange={(e) => {
+                                const raw = e.target.value;
+                                const n = Number(raw);
+                                setProductTemplateIntent((prev) => {
+                                  const nextSize = { ...(prev.targetCanvasSizePx || {}) } as { width?: number; height?: number };
+                                  if (!raw.trim()) {
+                                    delete nextSize.height;
+                                  } else if (Number.isFinite(n) && n > 0) {
+                                    nextSize.height = Math.round(n);
+                                  } else {
+                                    nextSize.height = undefined;
+                                  }
+                                  const keep = typeof nextSize.width === 'number' || typeof nextSize.height === 'number';
+                                  return { ...prev, targetCanvasSizePx: keep ? nextSize : undefined };
+                                });
+                              }}
+                              className="h-8 bg-white/5 border-white/10 text-white"
+                              inputMode="numeric"
+                              placeholder="留空"
+                            />
+                          </div>
+                        </div>
+                        <div className="text-[11px] text-white/45">留空则使用上传商品图的自然宽高。</div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border border-white/10 bg-[#14141a] px-3 py-2">
+                      <div className="text-xs text-white/60 mb-2">信息密度</div>
+                      <ToggleGroup
+                        type="single"
+                        value={productTemplateIntent.infoDensity}
+                        onValueChange={(v) => {
+                          if (!v) return;
+                          setProductTemplateIntent((prev) => ({ ...prev, infoDensity: v as ProductTemplateInfoDensity }));
+                        }}
+                        variant="outline"
+                        size="sm"
+                        spacing={0}
+                        className="flex flex-wrap"
+                      >
+                        <ToggleGroupItem value="low">少</ToggleGroupItem>
+                        <ToggleGroupItem value="medium">中</ToggleGroupItem>
+                        <ToggleGroupItem value="high">多</ToggleGroupItem>
+                      </ToggleGroup>
+                    </div>
+
+                    <div className="rounded-md border border-white/10 bg-[#14141a] px-3 py-2">
+                      <div className="text-xs text-white/60 mb-2">风格</div>
+                      <ToggleGroup
+                        type="single"
+                        value={productTemplateIntent.stylePreset || 'none'}
+                        onValueChange={(v) => {
+                          if (!v) return;
+                          if (v === 'none') {
+                            setProductTemplateIntent((prev) => ({ ...prev, stylePreset: undefined }));
+                            return;
+                          }
+                          setProductTemplateIntent((prev) => ({ ...prev, stylePreset: v as ProductTemplateStylePreset }));
+                        }}
+                        variant="outline"
+                        size="sm"
+                        spacing={0}
+                        className="flex flex-wrap"
+                      >
+                        <ToggleGroupItem value="none">中性</ToggleGroupItem>
+                        <ToggleGroupItem value="brand">品牌</ToggleGroupItem>
+                        <ToggleGroupItem value="minimal">极简</ToggleGroupItem>
+                        <ToggleGroupItem value="tech">科技</ToggleGroupItem>
+                        <ToggleGroupItem value="cute">可爱</ToggleGroupItem>
+                        <ToggleGroupItem value="luxury">高级</ToggleGroupItem>
+                      </ToggleGroup>
+                    </div>
+
+                    <div className="rounded-md border border-white/10 bg-[#14141a] px-3 py-2">
+                      <div className="text-xs text-white/60 mb-2">文案与卖点</div>
+                      <div className="space-y-3">
+                        <div>
+                          <div className="text-[11px] text-white/50 mb-2">卖点上限</div>
+                          <ToggleGroup
+                            type="single"
+                            value={String(productTemplateIntent.copy?.bulletCountMax ?? 3)}
+                            onValueChange={(v) => {
+                              if (!v) return;
+                              const next = Math.max(0, Math.min(5, Number(v) || 0)) as 0 | 1 | 2 | 3 | 4 | 5;
+                              setProductTemplateIntent((prev) => ({ ...prev, copy: { ...(prev.copy || {}), bulletCountMax: next } }));
+                            }}
+                            variant="outline"
+                            size="sm"
+                            spacing={0}
+                            className="flex flex-wrap"
+                          >
+                            <ToggleGroupItem value="0">0</ToggleGroupItem>
+                            <ToggleGroupItem value="1">1</ToggleGroupItem>
+                            <ToggleGroupItem value="2">2</ToggleGroupItem>
+                            <ToggleGroupItem value="3">3</ToggleGroupItem>
+                            <ToggleGroupItem value="4">4</ToggleGroupItem>
+                            <ToggleGroupItem value="5">5</ToggleGroupItem>
+                          </ToggleGroup>
+                        </div>
+                        <div>
+                          <div className="text-[11px] text-white/50 mb-2">标题字数上限</div>
+                          <ToggleGroup
+                            type="single"
+                            value={String(productTemplateIntent.copy?.titleCharLimit ?? 0)}
+                            onValueChange={(v) => {
+                              if (!v) return;
+                              const n = Number(v) || 0;
+                              setProductTemplateIntent((prev) => ({ ...prev, copy: { ...(prev.copy || {}), titleCharLimit: n > 0 ? n : undefined } }));
+                            }}
+                            variant="outline"
+                            size="sm"
+                            spacing={0}
+                            className="flex flex-wrap"
+                          >
+                            <ToggleGroupItem value="0">不限</ToggleGroupItem>
+                            <ToggleGroupItem value="10">10</ToggleGroupItem>
+                            <ToggleGroupItem value="15">15</ToggleGroupItem>
+                            <ToggleGroupItem value="20">20</ToggleGroupItem>
+                            <ToggleGroupItem value="30">30</ToggleGroupItem>
+                          </ToggleGroup>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="flex items-center justify-between rounded-md border border-white/10 bg-white/5 px-3 py-2">
+                            <div className="text-[11px] text-white/70">允许角标</div>
+                            <Switch
+                              checked={Boolean(productTemplateIntent.copy?.allowPromoBadge)}
+                              onCheckedChange={(checked) =>
+                                setProductTemplateIntent((prev) => ({ ...prev, copy: { ...(prev.copy || {}), allowPromoBadge: Boolean(checked) } }))
+                              }
+                            />
+                          </div>
+                          <div className="flex items-center justify-between rounded-md border border-white/10 bg-white/5 px-3 py-2">
+                            <div className="text-[11px] text-white/70">允许价格</div>
+                            <Switch
+                              checked={Boolean(productTemplateIntent.copy?.allowPrice)}
+                              onCheckedChange={(checked) =>
+                                setProductTemplateIntent((prev) => ({ ...prev, copy: { ...(prev.copy || {}), allowPrice: Boolean(checked) } }))
+                              }
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+            <div>
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="text-xs text-white/70">效果描述（必填）</div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isGenerating || isParsingTemplate || isGeneratingProductTemplate || isPolishingProductTemplateBrief}
+                  onClick={handlePolishProductTemplateBrief}
+                  className="h-7 border-white/10 text-white/80 hover:text-white hover:bg-white/10"
+                >
+                  {isPolishingProductTemplateBrief ? <Spinner className="mr-2 h-3.5 w-3.5 text-white/80" /> : null}
+                  AI 优化提示词
+                </Button>
+              </div>
+              <Textarea
+                value={productTemplateBrief}
+                onChange={(e) => {
+                  setIsProductTemplateBriefEdited(true);
+                  setProductTemplateBrief(e.target.value);
+                }}
+                className="min-h-24 bg-white/5 border-white/10 text-white"
+                placeholder="例如：跨境主图风格，左主右文案，强对比背景，3个卖点标签，整体高级科技感；标题文字为：BUY 1 GET 1"
+              />
+              <div className="text-xs text-white/50 mt-2">描述越清晰，区域划分与文案区建议越稳定。</div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <div className="text-xs text-white/70 mb-2">输出提示词语言</div>
+                <Select
+                  value={productTemplateOutputLanguage}
+                  onValueChange={(v) => setProductTemplateOutputLanguage(v as any)}
+                >
+                  <SelectTrigger className="h-9 bg-white/5 border-white/10 text-white">
+                    <SelectValue placeholder="选择语言" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1c1c21] border-white/10 text-white">
+                    <SelectItem value="auto" className="focus:bg-white/10 focus:text-white">自动</SelectItem>
+                    <SelectItem value="zh" className="focus:bg-white/10 focus:text-white">中文</SelectItem>
+                    <SelectItem value="en" className="focus:bg-white/10 focus:text-white">英文</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <div className="text-xs text-white/70 mb-2">商品主体（可选）</div>
+                <Input
+                  value={productTemplateProductHint}
+                  onChange={(e) => setProductTemplateProductHint(e.target.value)}
+                  className="h-9 bg-white/5 border-white/10 text-white"
+                  placeholder="例如：电热水壶 / 蓝牙耳机"
+                />
+                <div className="text-xs text-white/50 mt-2">填入后会优先作为 {'{PRODUCT}'} 默认值与主体识别提示。</div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button
+                variant="outline"
+                onClick={() => setProductTemplateSettingsOpen(false)}
+                className="border-white/10 text-white/80 hover:text-white hover:bg-white/10"
+              >
+                取消
+              </Button>
+              <Button
+                disabled={isGeneratingProductTemplate || isGenerating || isParsingTemplate}
+                onClick={() => {
+                  const finalBrief = composeProductTemplateFinalBrief(productTemplateIntent, productTemplateBrief, isProductTemplateBriefEdited);
+                  productTemplateOptionsRef.current = {
+                    outputLanguage: productTemplateOutputLanguage,
+                    productHint: productTemplateProductHint,
+                    brief: finalBrief,
+                    intent: productTemplateIntent,
+                  };
+                  setProductTemplateSettingsOpen(false);
+                  productTemplateImageInputRef.current?.click();
+                }}
+                className="bg-violet-600 hover:bg-violet-700 text-white"
+              >
+                选择商品图并生成
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={templatesOpen} onOpenChange={setTemplatesOpen}>
         <DialogContent className="sm:max-w-[980px] max-h-[85vh] overflow-y-auto bg-[#14141a] border-white/10 text-white">

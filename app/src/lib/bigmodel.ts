@@ -1,3 +1,5 @@
+import type { ProductTemplateIntentV1, SmartLayoutCopyVariables } from '@/types/smartLayout';
+
 const BIGMODEL_API_KEY = import.meta.env.VITE_BIGMODEL_API_KEY || '';
 const BIGMODEL_API_URL =
   import.meta.env.VITE_BIGMODEL_API_URL || 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
@@ -190,4 +192,80 @@ export async function polishFreeGenerationPrompt(input: {
     throw new Error('模型未返回可用润色结果');
   }
   return polishedPrompt;
+}
+
+export async function suggestSmartLayoutCopyVariables(input: {
+  intent: ProductTemplateIntentV1;
+  language?: 'zh' | 'en';
+  product?: string;
+  brief?: string;
+}): Promise<SmartLayoutCopyVariables> {
+  if (!BIGMODEL_API_KEY) {
+    throw new Error('未配置 VITE_BIGMODEL_API_KEY');
+  }
+
+  const intent = input.intent;
+  const product = (input.product || '').trim();
+  const brief = (input.brief || '').trim();
+  const language = input.language || 'zh';
+
+  const system = [
+    '你是电商商品图的文案变量生成助手。',
+    '任务：根据用户意图（图型/平台/密度/风格/文案结构约束）与补充描述，为模板变量生成“默认推荐文案”。',
+    '要求：',
+    '- 保持原语言（中文输入输出中文，英文输入输出英文）。',
+    '- 不编造不存在的品牌、参数、认证、价格、折扣数字；若没有明确依据，PRICE 必须输出空字符串。',
+    '- 文案要简短可上图：TITLE 一般 6~14 字（英文 4~8 词），BULLET 每条尽量短。',
+    '- 变量值不要包含大括号，不要输出 {TITLE} 这种占位符。',
+    '- bulletCountMax 为 N 时，仅生成 BULLET_1..BULLET_N；其余 BULLET_* 输出空字符串。',
+    '- allowPromoBadge=false 时 BADGE 输出空字符串；allowPrice=false 时 PRICE 输出空字符串。',
+    '输出：仅输出 JSON 对象 {"vars":{...}}；vars 允许的 key 为 PRODUCT,TITLE,SUBTITLE,BULLET_1..BULLET_5,CTA,BADGE,PRICE。',
+  ].join('\n');
+
+  const payload = {
+    language,
+    intent,
+    product: product || undefined,
+    brief: brief || undefined,
+  };
+
+  const response = (await fetchJson(
+    BIGMODEL_API_URL,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${BIGMODEL_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'glm-5',
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: JSON.stringify(payload) },
+        ] as ChatMessage[],
+        temperature: 0.4,
+        stream: false,
+        max_tokens: 1024,
+        response_format: { type: 'json_object' },
+      }),
+    },
+    TIMEOUT_MS
+  )) as BigModelChatResponse;
+
+  const content = response.choices?.[0]?.message?.content;
+  if (!content) {
+    const message = response.error?.message || '模型未返回内容';
+    throw new Error(message);
+  }
+
+  const parsed = parseJsonObject<{ vars?: Record<string, unknown> }>(content);
+  const vars = parsed.vars && typeof parsed.vars === 'object' ? (parsed.vars as Record<string, unknown>) : {};
+  const out: SmartLayoutCopyVariables = {};
+  for (const [k, v] of Object.entries(vars)) {
+    const key = k.trim();
+    if (!key) continue;
+    if (typeof v !== 'string') continue;
+    out[key as keyof SmartLayoutCopyVariables] = v.trim();
+  }
+  return out;
 }

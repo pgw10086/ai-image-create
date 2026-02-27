@@ -5,6 +5,7 @@ import type {
   ImageGenerationRequest,
 } from '../types/api';
 import { APIErrorCodes } from '../types/api';
+import type { ProductTemplateIntentV1, SmartLayoutCopyVariables } from '../types/smartLayout';
 import { normalizeImageSize } from './utils';
 import { createMockImageDataUri } from './mockImage';
 import { TAIHAO_PRO_MODEL_ID, isTaihaoProModel } from './generationContext';
@@ -613,6 +614,7 @@ export type SmartLayoutTemplateImageMainCandidate = {
 export type SmartLayoutTemplateImageParseResult = {
   name?: string;
   product?: string;
+  copyVariables?: SmartLayoutCopyVariables;
   mainConfidence?: number;
   mainReason?: string;
   mainCandidates?: SmartLayoutTemplateImageMainCandidate[];
@@ -646,6 +648,32 @@ function sanitizeConfidence(input: any) {
   return clamp01(Number.isFinite(v) ? v : 0);
 }
 
+function sanitizeCopyVariables(input: any): SmartLayoutCopyVariables | undefined {
+  if (!input || typeof input !== 'object') return undefined;
+  const allowedKeys: Array<keyof SmartLayoutCopyVariables> = [
+    'PRODUCT',
+    'TITLE',
+    'SUBTITLE',
+    'CTA',
+    'BADGE',
+    'PRICE',
+    'BULLET_1',
+    'BULLET_2',
+    'BULLET_3',
+    'BULLET_4',
+    'BULLET_5',
+  ];
+  const out: SmartLayoutCopyVariables = {};
+  for (const key of allowedKeys) {
+    const raw = (input as any)[key];
+    if (typeof raw !== 'string') continue;
+    const value = raw.trim();
+    if (!value) continue;
+    (out as any)[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 function parseSmartLayoutTemplateImageJson(input: string): SmartLayoutTemplateImageParseResult {
   const trimmed = (input || '').trim();
   const candidate = extractJsonCandidate(trimmed);
@@ -664,6 +692,7 @@ function parseSmartLayoutTemplateImageJson(input: string): SmartLayoutTemplateIm
     .filter(Boolean) as SmartLayoutTemplateImageParseZone[];
   const name = typeof parsed?.name === 'string' ? parsed.name.trim() : undefined;
   const product = typeof parsed?.product === 'string' ? parsed.product.trim() : undefined;
+  const copyVariables = sanitizeCopyVariables(parsed?.copyVariables);
   const mainConfidence = sanitizeConfidence(parsed?.mainConfidence);
   const mainReason = typeof parsed?.mainReason === 'string' ? parsed.mainReason.trim() : undefined;
   const mainCandidatesRaw = Array.isArray(parsed?.mainCandidates) ? parsed.mainCandidates : [];
@@ -680,6 +709,7 @@ function parseSmartLayoutTemplateImageJson(input: string): SmartLayoutTemplateIm
   return {
     name,
     product,
+    copyVariables,
     mainConfidence: Number.isFinite(Number(parsed?.mainConfidence)) ? mainConfidence : undefined,
     mainReason,
     mainCandidates: mainCandidates.length > 0 ? mainCandidates : undefined,
@@ -755,6 +785,85 @@ export async function parseSmartLayoutTemplateFromImage(input: {
 
   if (!parsed.zones || parsed.zones.length === 0) {
     throw new Error('未解析到可用的 zones，请换一张更清晰的模板图或稍后重试');
+  }
+
+  return parsed;
+}
+
+export async function generateSmartLayoutTemplateFromProductImage(input: {
+  image: string;
+  brief: string;
+  outputLanguage?: 'auto' | 'zh' | 'en';
+  productHint?: string;
+  intent?: ProductTemplateIntentV1;
+  signal?: AbortSignal;
+}): Promise<SmartLayoutTemplateImageParseResult> {
+  const brief = (input.brief || '').trim();
+  if (!brief) {
+    throw new Error('请先填写效果描述');
+  }
+
+  const ai = getGeminiClient();
+  if (!ai) {
+    throw new Error('未配置 VITE_GOOGLE_API_KEY，无法生成商品图模板');
+  }
+
+  const system = [
+    '你是电商商品宣传图“版式模板生成器”。',
+    '输入：一张商品图片（商品主体）+ 一段效果描述（构图/风格/卖点结构/文案要求/平台约束等）。',
+    '任务：基于商品图与效果描述，生成一套可用于前端编辑、可复用的布局区域列表 zones（给出建议版式，不需要与输入图已有排版一致）。',
+    '要求：',
+    '- 仅输出 JSON（不要解释、不要 Markdown、不要代码块）。',
+    '- 坐标使用 bboxNormalized：x,y,w,h，均为 0~1，且 x+w<=1、y+h<=1。',
+    '- zone.type 仅允许：background | main | prop。',
+    '- 必须包含 1 个 background（覆盖全画布）与 1 个 main（主体/主产品区域）。其余标题/卖点/标签/装饰/文字区域用 prop。',
+    '- 建议为文字信息预留安全边距（例如距边 >= 0.04），避免贴边。',
+    '- prompt 必须可执行：描述该区域应该生成/呈现什么；若该区域需要文字，请在 prompt 中写出“文字必须为：<文本>”。',
+    '- zones 的 prompt 里，文字一律用可替换变量占位符：{TITLE}、{SUBTITLE}、{BULLET_1}..{BULLET_5}、{CTA}、{BADGE}、{PRICE}，并放到“文字必须为：...”。不要把具体营销文案直接写进 zones.prompt。',
+    '- 你必须在输出中提供 copyVariables：为上述变量生成一份“推荐文案变量”（可编辑、可覆盖）。若效果描述里给了具体文案，请尽量原样提取进 copyVariables；若未提供，则基于效果描述与商品图生成符合语气的推荐文案。',
+    '- copyVariables 必须安全可信：不要编造认证/奖项/参数/折扣；除非明确给出，否则 PRICE 置空。',
+    '- 模板需要可复用：不要把具体商品写死在 prompt 中。对于主商品/主体，请统一使用占位符 {PRODUCT}，让用户后续替换。',
+    '- 输出语言遵循 outputLanguage：zh 输出中文 prompt；en 输出英文 prompt；auto 则根据效果描述语言自动选择。',
+    '- 如果提供 productHint，请将其视为商品名（优先作为 product 输出），并用于描述 main 区域。',
+    '- 你必须输出主体识别的置信度与理由：mainConfidence(0~1)、mainReason(一句话)。',
+    '- 如果你不确定主体，输出 mainCandidates（最多 3 个），每个包含 bboxNormalized/confidence/reason/product（product 可选）。',
+    '输出 JSON 结构：',
+    '{"name":"可选模板名","product":"识别到的具体商品名（用于默认替换，如：奶牛玩偶）","copyVariables":{"PRODUCT":"奶牛玩偶","TITLE":"大标题","SUBTITLE":"副标题","BULLET_1":"卖点1","BULLET_2":"卖点2","BULLET_3":"卖点3","CTA":"立即购买","BADGE":"新品","PRICE":""},"mainConfidence":0.83,"mainReason":"主体清晰且占比最大","mainCandidates":[{"bboxNormalized":{"x":0.1,"y":0.2,"w":0.6,"h":0.6},"confidence":0.83,"reason":"最大且最清晰","product":"奶牛玩偶"}],"zones":[{"type":"background","bboxNormalized":{"x":0,"y":0,"w":1,"h":1},"prompt":"...","zIndex":0}]}',
+  ].join('\n');
+
+  const inlineData = await toInlineData(input.image, input.signal);
+  const requestPayload = {
+    model: TAIHAO_PRO_MODEL_ID,
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { inlineData },
+          { text: system },
+          { text: `effectBrief=${brief}` },
+          { text: `outputLanguage=${input.outputLanguage || 'auto'}` },
+          { text: `productHint=${(input.productHint || '').trim()}` },
+          { text: `intentJson=${JSON.stringify(input.intent || null)}` },
+        ],
+      },
+    ] as any,
+    config: {
+      responseModalities: ['TEXT'],
+      temperature: 0.35,
+    },
+  } as any;
+
+  const timeoutMs = Math.min(120000, resolveGenerationTimeoutMs({ model: TAIHAO_PRO_MODEL_ID } as any));
+  const response: any = await withTimeoutAndAbort(ai.models.generateContent(requestPayload), input.signal, timeoutMs);
+
+  const textFallback =
+    (typeof response?.text === 'string' ? response.text : '') ||
+    response?.candidates?.[0]?.content?.parts?.find?.((part: any) => part?.text)?.text ||
+    '';
+  const parsed = parseSmartLayoutTemplateImageJson(textFallback);
+
+  if (!parsed.zones || parsed.zones.length === 0) {
+    throw new Error('未生成到可用的 zones，请尝试调整效果描述或稍后重试');
   }
 
   return parsed;

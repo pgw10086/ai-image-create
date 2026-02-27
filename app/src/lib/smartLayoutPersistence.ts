@@ -111,6 +111,8 @@ export function saveSmartLayoutDraft(draft: Omit<SmartLayoutDraftV1, 'schemaVers
     canvasSize: draft.canvasSize,
     zones: draft.zones,
     settings: draft.settings,
+    copyVariables: draft.copyVariables,
+    productTemplateIntent: draft.productTemplateIntent,
     generationContextSnapshot: draft.generationContextSnapshot,
   };
   try {
@@ -156,8 +158,9 @@ export function saveSmartLayoutHistory(next: SmartLayoutHistoryRecord[]) {
   try {
     window.localStorage.setItem(HISTORY_KEY, safeStringifyJson(next.slice(0, 20)));
   } catch {
-    return;
+    return false;
   }
+  return true;
 }
 
 export function createSmartLayoutTemplateExportPayload(templates: SmartLayoutTemplateV1[]) {
