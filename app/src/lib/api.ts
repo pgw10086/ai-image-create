@@ -18,8 +18,8 @@ const GENERATION_TIMEOUT_PER_IMAGE_MS = 30000;
 const GENERATION_TIMEOUT_REFERENCE_BONUS_MS = 15000;
 const GENERATION_TIMEOUT_GEMINI_BONUS_MS = 30000;
 const GENERATION_TIMEOUT_MAX_MS = 300000;
-// Gemini 3 Pro series model code from official docs. `gemini-3-pro` is invalid and causes 404.
-const GEMINI_VISION_MODEL_ID = 'gemini-3.1-pro-preview';
+// Multimodal recognition model for template parsing.
+const GEMINI_VISION_MODEL_ID = 'gemini-3-flash-preview';
 
 type ImageInlineData = {
   data: string;
@@ -305,6 +305,25 @@ async function withTimeoutAndAbort<T>(promise: Promise<T>, signal?: AbortSignal,
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
   }
+}
+
+async function generateGeminiTextWithVisionModel(input: {
+  contents: any[];
+  config: Record<string, any>;
+  signal?: AbortSignal;
+  timeoutMs: number;
+}) {
+  const ai = getGeminiClient();
+  if (!ai) {
+    throw new Error('未配置 VITE_GOOGLE_API_KEY，无法执行模板识图');
+  }
+
+  const requestPayload = {
+    model: GEMINI_VISION_MODEL_ID,
+    contents: input.contents,
+    config: input.config,
+  } as any;
+  return withTimeoutAndAbort(ai.models.generateContent(requestPayload), input.signal, input.timeoutMs);
 }
 
 async function generateByGemini(params: GenerateImageParams): Promise<GenerateImageResponse> {
@@ -872,8 +891,7 @@ export async function parseTemplateVariablesFromImage(input: {
   currentVariables?: Record<string, string>;
   signal?: AbortSignal;
 }): Promise<TemplateVariableImageParseResult> {
-  const ai = getGeminiClient();
-  if (!ai) {
+  if (!getGeminiClient()) {
     throw new Error('未配置 VITE_GOOGLE_API_KEY，无法执行模板识图');
   }
 
@@ -896,8 +914,8 @@ export async function parseTemplateVariablesFromImage(input: {
     '- 输出中文。',
   ].join('\n');
 
-  const requestPayload = {
-    model: GEMINI_VISION_MODEL_ID,
+  const timeoutMs = Math.min(120000, resolveGenerationTimeoutMs({ model: GEMINI_VISION_MODEL_ID } as any));
+  const response: any = await generateGeminiTextWithVisionModel({
     contents: [
       {
         role: 'user',
@@ -915,10 +933,9 @@ export async function parseTemplateVariablesFromImage(input: {
       responseModalities: ['TEXT'],
       temperature: 0.2,
     },
-  } as any;
-
-  const timeoutMs = Math.min(120000, resolveGenerationTimeoutMs({ model: GEMINI_VISION_MODEL_ID } as any));
-  const response: any = await withTimeoutAndAbort(ai.models.generateContent(requestPayload), input.signal, timeoutMs);
+    signal: input.signal,
+    timeoutMs,
+  });
   const textFallback =
     (typeof response?.text === 'string' ? response.text : '') ||
     response?.candidates?.[0]?.content?.parts?.find?.((part: any) => part?.text)?.text ||
@@ -933,8 +950,7 @@ export async function parseSuiteTemplateVariablesFromImage(input: {
   currentVariables?: Record<string, string>;
   signal?: AbortSignal;
 }): Promise<SuiteTemplateVariableImageParseResult> {
-  const ai = getGeminiClient();
-  if (!ai) {
+  if (!getGeminiClient()) {
     throw new Error('未配置 VITE_GOOGLE_API_KEY，无法执行模板识图');
   }
 
@@ -959,8 +975,8 @@ export async function parseSuiteTemplateVariablesFromImage(input: {
     '- 输出中文。',
   ].join('\n');
 
-  const requestPayload = {
-    model: GEMINI_VISION_MODEL_ID,
+  const timeoutMs = Math.min(120000, resolveGenerationTimeoutMs({ model: GEMINI_VISION_MODEL_ID } as any));
+  const response: any = await generateGeminiTextWithVisionModel({
     contents: [
       {
         role: 'user',
@@ -978,10 +994,9 @@ export async function parseSuiteTemplateVariablesFromImage(input: {
       responseModalities: ['TEXT'],
       temperature: 0.2,
     },
-  } as any;
-
-  const timeoutMs = Math.min(120000, resolveGenerationTimeoutMs({ model: GEMINI_VISION_MODEL_ID } as any));
-  const response: any = await withTimeoutAndAbort(ai.models.generateContent(requestPayload), input.signal, timeoutMs);
+    signal: input.signal,
+    timeoutMs,
+  });
   const textFallback =
     (typeof response?.text === 'string' ? response.text : '') ||
     response?.candidates?.[0]?.content?.parts?.find?.((part: any) => part?.text)?.text ||
