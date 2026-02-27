@@ -731,6 +731,26 @@ const SUITE_TEMPLATE_VARIABLE_CONFIGS: Record<
       BOW_PRODUCT: '蝴蝶结商品完整描述（优先包含颜色/材质/样式，如“蓝色缎面蝴蝶结”）',
     },
   },
+  'suite-jewelry-rack-storage': {
+    keys: [
+      'JEWELRY_PRODUCT',
+      'STORAGE_CATEGORY_CN',
+      'STORAGE_ITEMS_CN',
+      'STORAGE_TITLE_EN',
+      'STORAGE_CATEGORY_LABELS_EN',
+      'STORAGE_USAGE_SCENE_CN',
+      'STORAGE_SELLING_POINTS_CN',
+    ],
+    keyHints: {
+      JEWELRY_PRODUCT: '收纳主体商品描述（颜色/材质/结构），可不是首饰类，如“白色亚克力发饰收纳架”或“黑色多层工具收纳架”',
+      STORAGE_CATEGORY_CN: '收纳品类中文概括（如“发饰”“美妆”“文具”“工具”）',
+      STORAGE_ITEMS_CN: '主要收纳物品的中文列表（如“发夹、发带、头绳”）',
+      STORAGE_TITLE_EN: '信息面板英文标题（根据品类自动生成，如“Hair Accessory Organizer Stand”）',
+      STORAGE_CATEGORY_LABELS_EN: '信息面板英文标签列表（如“for Hair Clips, for Hair Bands, for Hair Ties”）',
+      STORAGE_USAGE_SCENE_CN: '适配的场景描述（如“儿童房梳妆台场景”“浴室台面场景”）',
+      STORAGE_SELLING_POINTS_CN: '核心卖点短语（如“分层收纳、拿取方便、防尘整洁”）',
+    },
+  },
 };
 
 function extractJsonCandidate(input: string) {
@@ -938,8 +958,11 @@ export async function parseSuiteTemplateVariablesFromImage(input: {
     '- variables 的 key 只能来自 allowedKeys。',
     '- 只返回“需要替换”的变量；不确定或与图片无关的变量不要返回。',
     '- 必须优先识别客观属性：颜色、材质、形态、图案、数量、结构。',
+    '- 需要识别“收纳品类”与“卖点”语义：是什么品类（发饰/文具/美妆/工具等）、收纳什么、适配什么场景、核心卖点是什么。',
+    '- 不要受 templateId 或已有词影响，必须以图片真实主体为准。',
     '- 若 currentVariables 与图片冲突，以图片识别结果为准（例如当前是“粉色”，图片是“蓝色”，应改成“蓝色”）。',
     '- 变量 value 需短句、可直接替换，不要包含占位符或额外字段。',
+    '- key 名以 _EN 结尾时请输出英文值，其它 key 输出中文值。',
     '- 输出中文。',
   ].join('\n');
 

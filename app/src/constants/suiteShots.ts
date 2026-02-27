@@ -51,7 +51,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     name: '白色产品白底图',
     description: '纯白背景商品主图，强调金属质感与电商展示清晰度。',
     defaultPromptSuffixZh:
-      '专业的电商产品摄影，纯白色背景，极简主义，影棚光，8k分辨率，超高清，金属质感强烈。',
+      '专业的电商产品摄影，{JEWELRY_PRODUCT}，纯白色背景，极简主义，影棚光，8k分辨率，超高清，突出{STORAGE_SELLING_POINTS_CN}。',
     defaultRatioMode: '1:1',
     defaultImageCount: 1,
   },
@@ -60,7 +60,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     name: '尺寸标注图',
     description: '30-45度结构展示，带标注线，突出尺寸信息与结构清晰度。',
     defaultPromptSuffixZh:
-      '一款金色四层首饰置物架置于浅米白背景中央，30-45 度正侧视角，居中构图，仅保留产品主体，无饰品挂件与杂物。添加清晰的尺寸标注线与文字：横向总宽 26cm/10.24inch，纵向总高 32cm/12.60inch，底座深度 12cm/4.72inch。标注风格简洁专业，黑色细线与文字，箭头清晰，画面干净，细节锐利，电商尺寸说明图风格。',
+      '一款{JEWELRY_PRODUCT}置于浅米白背景中央，30-45 度正侧视角，居中构图，仅保留产品主体，无饰品挂件与杂物。添加清晰的尺寸标注线与文字：横向总宽 26cm/10.24inch，纵向总高 32cm/12.60inch，底座深度 12cm/4.72inch。标注风格简洁专业，黑色细线与文字，箭头清晰，画面干净，细节锐利，电商尺寸说明图风格。',
     defaultRatioMode: '1:1',
     defaultImageCount: 1,
   },
@@ -69,7 +69,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     name: '产品场景图',
     description: '桌面静物生活方式场景，不出镜人物，突出家居氛围与收纳质感。',
     defaultPromptSuffixZh:
-      '生活方式产品摄影，明亮干净的家居桌面场景，浅木色桌面与白墙背景，首饰置物架作为画面主体置于桌面中央，挂有项链与耳饰，周围搭配简洁置物架、绿植、小摆件等软装。自然侧光，柔和阴影，色调温暖克制，构图整洁，真实高端电商场景图风格，无人物出镜，无杂乱背景。',
+      '生活方式产品摄影，明亮干净的{STORAGE_USAGE_SCENE_CN}，{JEWELRY_PRODUCT}作为画面主体置于中央，展示收纳物品：{STORAGE_ITEMS_CN}。自然侧光，柔和阴影，色调温暖克制，构图整洁，真实高端电商场景图风格，无人物出镜，无杂乱背景。',
     defaultRatioMode: '16:9',
     defaultImageCount: 1,
   },
@@ -78,7 +78,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     name: '模特场景图',
     description: '卧室梳妆台生活方式场景，营造高品质真实氛围。',
     defaultPromptSuffixZh:
-      '生活方式摄影，一位优雅的女性坐在卧室白色的梳妆台前化妆，前景是一个首饰置物架挂满珠宝，背景是模糊的舒适卧室，自然光线，柔和的色调，高品质生活氛围，真实感。',
+      '生活方式摄影，人物与{JEWELRY_PRODUCT}同框展示，场景为{STORAGE_USAGE_SCENE_CN}，收纳内容为{STORAGE_ITEMS_CN}，突出“{STORAGE_SELLING_POINTS_CN}”。自然光线，柔和色调，真实感。',
     defaultRatioMode: '4:3',
     defaultImageCount: 1,
   },
@@ -87,7 +87,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     name: '功能卖点分解图',
     description: '中心主体+留白信息区，适合功能卖点图文拆解。',
     defaultPromptSuffixZh:
-      '正面视图，图像中央是首饰架，周围预留充足的纯白背景留白，每个物品添加文字、图标和指示线。明亮均匀的影棚光，高分辨率，电商产品功能卖点分解图。',
+      '正面视图，图像中央是{JEWELRY_PRODUCT}，围绕“{STORAGE_SELLING_POINTS_CN}”做功能卖点分解，周围预留充足留白用于图标和指示线。明亮均匀的影棚光，高分辨率，电商产品功能卖点分解图。',
     defaultRatioMode: '1:1',
     defaultImageCount: 1,
   },
@@ -96,7 +96,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     name: '收纳品类展示图',
     description: '信息图布局，展示可收纳的饰品与小物品类目。',
     defaultPromptSuffixZh:
-      '一张高端电商产品详情主图，采用明确的左右构图。左侧区域展示首饰收纳架，只需要产品部分，不要杂乱背景。右侧区域是一个带有圆角的白色信息面板，顶部印有棕金色艺术字体标题“4 Tier Jewelry Organizer Stand”。面板下方整齐排列两行蓝色线条风格矢量图标，并配有对应的金色文字说明：第一行包括项链图标配文“for Necklaces”、手链图标配文“for Bracelets”、耳环图标配文“for Earring”；第二行包括口红图标配文“for Lipsticks”、香水图标配文“for Perfumes”、别针图标配文“for Pins”、蝴蝶结发饰图标配文“Hair Accessories”。整体风格为干净柔和的米色背景、均匀明亮光线、极简主义商业摄影质感，重点突出右侧信息图与左侧产品的对应关系。',
+      '一张高端电商产品详情主图，主题为“{STORAGE_CATEGORY_CN}收纳”。采用明确的左右构图：左侧展示{JEWELRY_PRODUCT}主体；右侧是白色信息面板，标题“{STORAGE_TITLE_EN}”，并展示英文品类标签：{STORAGE_CATEGORY_LABELS_EN}。整体风格为干净柔和背景、均匀明亮光线、极简商业摄影质感，突出信息图与产品的对应关系。',
     defaultRatioMode: '16:9',
     defaultImageCount: 1,
   },
@@ -105,7 +105,7 @@ export const SUITE_SHOTS: SuiteShotDefinition[] = [
     name: '礼赠场景拼图',
     description: '左产品右生活方式拼图，强调节日送礼与家庭情感氛围。',
     defaultPromptSuffixZh:
-      '一张高端电商详情图，采用左窄右宽的分栏构图。左侧为金色四层首饰收纳架产品实拍图，置于白色底座，挂有项链、耳环与戒指，仅保留产品主体，不要出现桌面摆件、绿植、杯子、书本等任何背景杂物。右侧为三宫格式生活方式拼图：中间偏左一张主图展示情侣送礼互动，右上和右下两张展示母女/姐妹或儿童收到礼物的温馨场景，人物表情自然真实。整体叠加优雅手写体文案“Nice Gift”，整张图统一使用干净柔和的米色背景，光线柔和均匀，画质清晰，商业摄影风格，突出“首饰架适合作为礼物”的卖点。',
+      '一张高端电商详情图，采用左窄右宽分栏。左侧为{JEWELRY_PRODUCT}实拍图，展示收纳内容：{STORAGE_ITEMS_CN}。右侧为三宫格生活方式拼图，强调送礼场景与家庭互动。整体叠加文案“Nice Gift”，统一干净柔和背景与柔和光线，突出“{STORAGE_SELLING_POINTS_CN}，适合作为礼物”的卖点。',
     defaultRatioMode: '16:9',
     defaultImageCount: 1,
   },

@@ -12,7 +12,6 @@ import type { GenerationTask } from '@/store/appStore';
 import { generateImage, parseTemplateVariablesFromImage } from '@/lib/api';
 import { polishFreeGenerationPrompt } from '@/lib/bigmodel';
 import {
-  buildPromptWithContext,
   computeGroupGeneration,
   hasGeminiApiKeyConfigured,
   isTaihaoProModel,
@@ -342,7 +341,6 @@ export function InputArea() {
     updateTaskStatus,
     tasks,
     generationContext,
-    activeTags,
   } = useAppStore();
 
   const [isFocused, setIsFocused] = useState(false);
@@ -528,15 +526,8 @@ export function InputArea() {
     const ratioModeRaw = (generationContext.ratioMode ?? '').trim();
     const ratioMode = ratioModeRaw === '智能比例' || ratioModeRaw.includes(':') ? ratioModeRaw : '智能比例';
     const qualityMode = generationContext.qualityMode === '4K' ? '4K' : '2K';
-    const { size, hint: sizeHint } = resolveSizeFromRatioMode({ ratioMode, qualityMode, modelId });
-    const allowText = activeTags.includes('text');
-    const basePrompt = (rawPrompt.trim() || 'product photography, professional e-commerce style').trim();
-    const prompt = buildPromptWithContext({
-      basePrompt,
-      context: generationContext,
-      allowText,
-      sizeHint,
-    });
+    const { size } = resolveSizeFromRatioMode({ ratioMode, qualityMode, modelId });
+    const prompt = rawPrompt;
 
     const referenceCount = uploadedImages.length;
     const group = computeGroupGeneration({

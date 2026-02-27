@@ -43,11 +43,30 @@ const SUITE_TEMPLATE_VARIABLE_DEFAULTS: Record<string, Record<string, string>> =
   'suite-bow-lace-girls': {
     BOW_PRODUCT: '黑色蕾丝蝴蝶结',
   },
+  'suite-jewelry-rack-storage': {
+    JEWELRY_PRODUCT: '收纳架产品',
+    STORAGE_CATEGORY_CN: '饰品',
+    STORAGE_ITEMS_CN: '耳饰、项链、戒指等小件',
+    STORAGE_TITLE_EN: 'Organizer Stand',
+    STORAGE_CATEGORY_LABELS_EN: 'for Small Accessories, for Daily Items, for Easy Access',
+    STORAGE_USAGE_SCENE_CN: '干净明亮的家居桌面场景',
+    STORAGE_SELLING_POINTS_CN: '分层收纳、取放便捷、分类清晰',
+  },
+};
+
+const SUITE_TEMPLATE_DEFAULT_GLOBAL_PROMPTS: Record<string, string> = {
+  'suite-jewelry-rack-storage': '{STORAGE_CATEGORY_CN}收纳商品摄影，主体为{JEWELRY_PRODUCT}，突出{STORAGE_SELLING_POINTS_CN}与场景适配',
+  'suite-bow-lace-girls': '{BOW_PRODUCT}商品摄影，电商详情套图，突出材质细节、尺寸信息与佩戴效果',
 };
 
 function getSuiteTemplateDefaultVariables(templateId?: string) {
   if (!templateId) return {};
   return { ...(SUITE_TEMPLATE_VARIABLE_DEFAULTS[templateId] ?? {}) };
+}
+
+function getSuiteTemplateDefaultGlobalPrompt(templateId?: string) {
+  if (!templateId) return '';
+  return (SUITE_TEMPLATE_DEFAULT_GLOBAL_PROMPTS[templateId] ?? '').trim();
 }
 
 function applySuiteTemplateVariables(input: string, variables: Record<string, string>) {
@@ -71,6 +90,43 @@ function applySuiteTemplateVariableDiff(input: string, prev: Record<string, stri
     if (prevVal && prevVal !== nextVal) {
       output = output.replaceAll(prevVal, nextVal);
     }
+  }
+  return output;
+}
+
+function applySuiteSemanticOptimizations(input: string, variables: Record<string, string>) {
+  if (!input) return input;
+
+  const category = (variables.STORAGE_CATEGORY_CN ?? '').trim();
+  const items = (variables.STORAGE_ITEMS_CN ?? '').trim();
+  const titleEn = (variables.STORAGE_TITLE_EN ?? '').trim();
+  const labelsEn = (variables.STORAGE_CATEGORY_LABELS_EN ?? '').trim();
+  const scene = (variables.STORAGE_USAGE_SCENE_CN ?? '').trim();
+  const sellingPoints = (variables.STORAGE_SELLING_POINTS_CN ?? '').trim();
+
+  const replacements: Array<[RegExp, string]> = [];
+  if (category) {
+    replacements.push([/首饰收纳/g, `${category}收纳`], [/首饰置物架/g, `${category}收纳架`], [/首饰架/g, `${category}收纳架`]);
+  }
+  if (items) {
+    replacements.push([/项链、耳饰与戒指/g, items], [/项链、耳环与戒指/g, items], [/项链与耳饰/g, items], [/收纳物品：[^，。；]+/g, `收纳物品：${items}`]);
+  }
+  if (titleEn) {
+    replacements.push([/“[^”]*Organizer[^”]*”/gi, `“${titleEn}”`], [/Jewelry Organizer Stand/gi, titleEn]);
+  }
+  if (labelsEn) {
+    replacements.push([/for Necklaces[^。；]*/gi, labelsEn]);
+  }
+  if (scene) {
+    replacements.push([/干净明亮的家居桌面场景/g, scene], [/场景为[^，。；]+/g, `场景为${scene}`]);
+  }
+  if (sellingPoints) {
+    replacements.push([/分层收纳、取放便捷、分类清晰/g, sellingPoints], [/围绕“[^”]+”做功能卖点分解/g, `围绕“${sellingPoints}”做功能卖点分解`]);
+  }
+
+  let output = input;
+  for (const [pattern, to] of replacements) {
+    output = output.replace(pattern, to);
   }
   return output;
 }
@@ -299,7 +355,10 @@ export function SuiteGeneratorView() {
     const sizePx = overrides?.sizePx ?? (sizeMode === 'pixels' ? recommendedPixelSizesByRatio(ratioMode, modelId)[0] : undefined);
     const size = overrides?.size ?? resolveSizeFromItemConfig({ ratioMode, sizeMode, sizeResolution, sizePx, modelId });
     const imageCount = overrides?.imageCount ?? shot?.defaultImageCount ?? 1;
-    const promptSuffix = applySuiteTemplateVariables(shot?.defaultPromptSuffixZh ?? '', templateVariables);
+    const promptSuffix = applySuiteSemanticOptimizations(
+      applySuiteTemplateVariables(shot?.defaultPromptSuffixZh ?? '', templateVariables),
+      templateVariables
+    );
     const promptBase = overrides?.promptBase ?? joinPrompt(baseGlobal, promptSuffix);
     const prompt = composeItemPrompt({
       promptBase,
@@ -449,10 +508,16 @@ export function SuiteGeneratorView() {
     const changedKeys = Object.keys(next).filter((k) => (prev[k] ?? '').trim() !== (next[k] ?? '').trim());
     if (changedKeys.length === 0) return;
 
+    const nextGlobal = applySuiteSemanticOptimizations(applySuiteTemplateVariableDiff(inputValue, prev, next), next);
+    if (nextGlobal !== inputValue) setInputValue(nextGlobal);
+
     const modelId = resolveModelId(generationContext.model);
     setSuiteItems((prevItems) =>
       prevItems.map((item) => {
-        const nextPromptBase = applySuiteTemplateVariableDiff(item.promptBase ?? '', prev, next);
+        const nextPromptBase = applySuiteSemanticOptimizations(
+          applySuiteTemplateVariableDiff(item.promptBase ?? '', prev, next),
+          next
+        );
         if (nextPromptBase === (item.promptBase ?? '')) return item;
         const ratioMode = item.ratioMode ?? '智能比例';
         const sizeMode = item.sizeMode;
@@ -463,7 +528,7 @@ export function SuiteGeneratorView() {
         return { ...item, promptBase: nextPromptBase, prompt, size };
       })
     );
-  }, [composeItemPrompt, generationContext.model, resolveSizeFromItemConfig, selectedTemplate, suiteTemplateVariables, supportsTemplateVariableAutofill]);
+  }, [composeItemPrompt, generationContext.model, inputValue, resolveSizeFromItemConfig, selectedTemplate, setInputValue, suiteTemplateVariables, supportsTemplateVariableAutofill]);
 
   useEffect(() => {
     const req = suitePresetRequest;
@@ -494,14 +559,21 @@ export function SuiteGeneratorView() {
       stylePreset: preset.stylePreset ?? undefined,
     });
 
-    const nextGlobal = (inputValue.trim() || preset.defaultGlobalPrompt || '').trim();
+    const defaultGlobal = applySuiteSemanticOptimizations(
+      applySuiteTemplateVariables(getSuiteTemplateDefaultGlobalPrompt(tpl.id), initialTemplateVariables),
+      initialTemplateVariables
+    );
+    const nextGlobal = (defaultGlobal || preset.defaultGlobalPrompt || inputValue.trim() || '').trim();
     if (nextGlobal && nextGlobal !== inputValue.trim()) setInputValue(nextGlobal);
 
     const shotIds = (tpl.defaultShotIds?.length ? tpl.defaultShotIds : tpl.availableShotIds) ?? [];
     const modelId = resolveModelId(generationContext.model);
     const initial = shotIds.map((id) => {
       const defaultShot = customShots.find((s) => s.id === id) ?? getSuiteShotById(id);
-      const promptSuffix = applySuiteTemplateVariables(defaultShot?.defaultPromptSuffixZh ?? '', initialTemplateVariables);
+      const promptSuffix = applySuiteSemanticOptimizations(
+        applySuiteTemplateVariables(defaultShot?.defaultPromptSuffixZh ?? '', initialTemplateVariables),
+        initialTemplateVariables
+      );
       const item = createItemFromShot(id, { status: 'pending', promptBase: joinPrompt(nextGlobal, promptSuffix) }, initialTemplateVariables);
       const promptBase = joinPrompt(item.promptBase ?? '', preset.promptAddonZh);
       const ratioMode = item.ratioMode ?? '智能比例';
@@ -529,7 +601,10 @@ export function SuiteGeneratorView() {
           it.sizeResolution ?? (sizeMode === 'resolution' ? (resolveResolutionOptions(modelId)[0] as any) : undefined);
         const sizePx = it.sizePx ?? (sizeMode === 'pixels' ? recommendedPixelSizesByRatio(ratioMode, modelId)[0] : undefined);
         const size = resolveSizeFromItemConfig({ ratioMode, sizeMode, sizeResolution, sizePx, modelId });
-        const promptSuffix = applySuiteTemplateVariables(shot?.defaultPromptSuffixZh ?? '', suiteTemplateVariables);
+        const promptSuffix = applySuiteSemanticOptimizations(
+          applySuiteTemplateVariables(shot?.defaultPromptSuffixZh ?? '', suiteTemplateVariables),
+          suiteTemplateVariables
+        );
         const promptBase = joinPrompt(baseGlobal, promptSuffix);
         const prompt = composeItemPrompt({ promptBase, ratioMode, sizeMode, sizeResolution, sizePx, modelId });
         return { ...it, name: shot?.name ?? it.name, promptBase, prompt, ratioMode, sizeMode, sizeResolution, sizePx, size };
@@ -740,8 +815,24 @@ export function SuiteGeneratorView() {
             prevSuiteTemplateVariablesRef.current = initialTemplateVariables;
             lastTemplateVariableAnalyzeKeyRef.current = '';
             lastTemplateVariableAnalyzeSucceededRef.current = false;
+            const nextGlobal = (
+              applySuiteSemanticOptimizations(
+                applySuiteTemplateVariables(getSuiteTemplateDefaultGlobalPrompt(tpl.id), initialTemplateVariables),
+                initialTemplateVariables
+              ) ||
+              inputValue.trim() ||
+              '商品摄影，专业电商风格'
+            ).trim();
+            if (nextGlobal !== inputValue.trim()) setInputValue(nextGlobal);
             const shotIds = (tpl.defaultShotIds?.length ? tpl.defaultShotIds : tpl.availableShotIds) ?? [];
-            const initial = shotIds.map((id) => createItemFromShot(id, { status: 'pending' }, initialTemplateVariables));
+            const initial = shotIds.map((id) => {
+              const defaultShot = customShots.find((s) => s.id === id) ?? getSuiteShotById(id);
+                  const promptSuffix = applySuiteSemanticOptimizations(
+                    applySuiteTemplateVariables(defaultShot?.defaultPromptSuffixZh ?? '', initialTemplateVariables),
+                    initialTemplateVariables
+                  );
+              return createItemFromShot(id, { status: 'pending', promptBase: joinPrompt(nextGlobal, promptSuffix) }, initialTemplateVariables);
+            });
             setSuiteItems(initial);
             setActiveSuiteTaskId(null);
             setNewItemShotId((tpl.availableShotIds?.[0] ?? shotIds[0] ?? 'front').toString());
@@ -985,7 +1076,7 @@ export function SuiteGeneratorView() {
                   ) : (
                     <Button type="button" onClick={handleStart} disabled={isTemplateVariableAnalyzing}>
                       {isTemplateVariableAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                      开始生成
+                      {isTemplateVariableAnalyzing ? '识别商品中' : '开始生成'}
                     </Button>
                   )}
                 </div>
