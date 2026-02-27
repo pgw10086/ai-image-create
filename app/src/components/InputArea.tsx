@@ -10,7 +10,6 @@ import type { HistoryEditor } from 'slate-history';
 import { useAppStore } from '@/store/appStore';
 import type { GenerationTask } from '@/store/appStore';
 import { generateImage, parseTemplateVariablesFromImage } from '@/lib/api';
-import { polishFreeGenerationPrompt } from '@/lib/bigmodel';
 import {
   computeGroupGeneration,
   hasGeminiApiKeyConfigured,
@@ -344,10 +343,7 @@ export function InputArea() {
   } = useAppStore();
 
   const [isFocused, setIsFocused] = useState(false);
-  const [isPolishing, setIsPolishing] = useState(false);
   const [isTemplateAnalyzing, setIsTemplateAnalyzing] = useState(false);
-  const lastAnalyzedImageKeyRef = useRef('');
-  const lastAnalyzeSucceededRef = useRef(false);
   const analyzeRequestSeqRef = useRef(0);
   const [editor] = useState<TemplateEditor>(() =>
     withTemplateVariables(withReact(withHistory(createEditor())) as TemplateEditor)
@@ -444,28 +440,15 @@ export function InputArea() {
     [editor]
   );
 
-  const getTemplateAnalyzeKey = useCallback(() => {
-    if (!isVariableTemplatePreset(inputTemplatePreset)) return '';
-    const firstImage = uploadedImages[0]?.url ?? '';
-    if (!firstImage) return '';
-    return `${inputTemplatePreset}::${firstImage}`;
-  }, [inputTemplatePreset, uploadedImages]);
-
-  const analyzeTemplateByImage = useCallback(async (options?: { source?: 'upload' | 'generate' }) => {
+  const analyzeTemplateByImage = useCallback(async () => {
     if (!isVariableTemplatePreset(inputTemplatePreset)) return;
     if (!hasGeminiApiKeyConfigured()) return;
     const firstImage = uploadedImages[0]?.url;
     if (!firstImage) return;
-    const key = `${inputTemplatePreset}::${firstImage}`;
-    if (options?.source === 'upload' && key === lastAnalyzedImageKeyRef.current && lastAnalyzeSucceededRef.current) {
-      return;
-    }
 
     const seq = analyzeRequestSeqRef.current + 1;
     analyzeRequestSeqRef.current = seq;
     setIsTemplateAnalyzing(true);
-    lastAnalyzedImageKeyRef.current = key;
-    lastAnalyzeSucceededRef.current = false;
     try {
       const currentVariables = collectTemplateVariableValues(editor.children as Descendant[]);
       const parsed = await parseTemplateVariablesFromImage({
@@ -475,9 +458,10 @@ export function InputArea() {
       });
       if (seq !== analyzeRequestSeqRef.current) return;
       const changed = applyTemplateVariableValues(parsed.variables);
-      lastAnalyzeSucceededRef.current = true;
       if (changed > 0) {
-        toast.success(options?.source === 'upload' ? `已自动识图并更新 ${changed} 个变量` : `AI 识图已更新 ${changed} 个模板变量`);
+        toast.success(`AI 识图已更新 ${changed} 个模板变量`);
+      } else {
+        toast.message('AI 识图完成，模板变量无需更新');
       }
     } catch (e: unknown) {
       if (seq !== analyzeRequestSeqRef.current) return;
@@ -488,29 +472,7 @@ export function InputArea() {
     }
   }, [applyTemplateVariableValues, collectTemplateVariableValues, editor, inputTemplatePreset, uploadedImages]);
 
-  useEffect(() => {
-    const key = getTemplateAnalyzeKey();
-    if (!key) {
-      lastAnalyzedImageKeyRef.current = '';
-      lastAnalyzeSucceededRef.current = false;
-      return;
-    }
-    if (!usingVariableTemplate) return;
-    if (!hasGeminiApiKeyConfigured()) return;
-    if (isTemplateAnalyzing) return;
-    if (key === lastAnalyzedImageKeyRef.current && lastAnalyzeSucceededRef.current) return;
-    void analyzeTemplateByImage({ source: 'upload' });
-  }, [analyzeTemplateByImage, getTemplateAnalyzeKey, isTemplateAnalyzing, usingVariableTemplate]);
-
   const handleGenerate = async () => {
-    if (usingVariableTemplate && uploadedImages.length > 0 && hasGeminiApiKeyConfigured()) {
-      const key = getTemplateAnalyzeKey();
-      const analyzedCurrentImage = key && key === lastAnalyzedImageKeyRef.current && lastAnalyzeSucceededRef.current;
-      if (!analyzedCurrentImage) {
-        await analyzeTemplateByImage({ source: 'generate' });
-      }
-    }
-
     const rawPrompt = usingVariableTemplate ? syncTemplatePromptToStore() : inputValue;
 
     if (!rawPrompt.trim() && uploadedImages.length === 0) {
@@ -591,35 +553,21 @@ export function InputArea() {
     }
   };
 
-  const hasChinese = (input: string) => /[\u4e00-\u9fff]/.test(input);
-
-  const detectLanguage = (prompt: string) => (hasChinese(prompt) ? ('zh' as const) : ('en' as const));
-
-  const handleAIPolish = async () => {
-    if (isPolishing || isTemplateAnalyzing) return;
-    const rawPrompt = usingVariableTemplate ? syncTemplatePromptToStore() : inputValue;
-    const current = (rawPrompt || '').trim();
-
-    if (!current) {
-      toast.error('请先输入提示词，再进行 AI 润色');
+  const handleAnalyzeProduct = async () => {
+    if (!usingVariableTemplate) {
+      toast.message('请先选择变量模板，再执行 AI 识别商品');
       return;
     }
-
-    setIsPolishing(true);
-    try {
-      const polished = await polishFreeGenerationPrompt({
-        prompt: current,
-        language: detectLanguage(current),
-      });
-      setInputTemplatePreset('none');
-      setInputValue(polished);
-      toast.success('已完成 AI 润色');
-    } catch (e: any) {
-      const message = e instanceof Error ? e.message : '润色失败';
-      toast.error('润色失败: ' + message);
-    } finally {
-      setIsPolishing(false);
+    if (uploadedImages.length === 0) {
+      toast.error('请先上传产品图');
+      return;
     }
+    if (!hasGeminiApiKeyConfigured()) {
+      toast.error('未配置 VITE_GOOGLE_API_KEY，无法执行模板识图');
+      return;
+    }
+    if (isTemplateAnalyzing) return;
+    await analyzeTemplateByImage();
   };
 
   const renderElement = useCallback((props: RenderElementProps) => {
@@ -736,12 +684,12 @@ export function InputArea() {
         <motion.button
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
-          onClick={() => void handleAIPolish()}
-          disabled={isGenerating || isPolishing || isTemplateAnalyzing}
+          onClick={() => void handleAnalyzeProduct()}
+          disabled={isGenerating || isTemplateAnalyzing || !usingVariableTemplate || uploadedImages.length === 0}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 text-white text-sm font-medium hover:shadow-lg hover:shadow-violet-600/25 transition-shadow flex-shrink-0 disabled:opacity-50"
         >
-          {isPolishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-          <span>{isPolishing ? '润色中...' : 'AI 润色'}</span>
+          {isTemplateAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+          <span>{isTemplateAnalyzing ? '识别中...' : 'AI 识别商品'}</span>
         </motion.button>
         <motion.button
           whileHover={{ scale: 1.05 }}

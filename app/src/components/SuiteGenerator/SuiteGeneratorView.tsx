@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Check, ChevronDown, ChevronUp, Loader2, Plus, RotateCcw, Send, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Loader2, Plus, RotateCcw, Send, Sparkles, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { useAppStore } from '@/store/appStore';
@@ -169,8 +169,6 @@ export function SuiteGeneratorView() {
   const isGenerating = tasks.some((t) => t.status === 'processing');
   const abortRef = useRef<AbortController | null>(null);
   const lastPresetAtRef = useRef<number>(0);
-  const lastTemplateVariableAnalyzeKeyRef = useRef('');
-  const lastTemplateVariableAnalyzeSucceededRef = useRef(false);
   const templateVariableAnalyzeSeqRef = useRef(0);
   const prevSuiteTemplateVariablesRef = useRef<Record<string, string>>({});
   const {
@@ -392,30 +390,16 @@ export function SuiteGeneratorView() {
     } satisfies SuiteItemResult;
   };
 
-  const getTemplateVariableAnalyzeKey = useCallback(() => {
-    const firstImage = uploadedImages[0]?.url ?? '';
-    const templateId = selectedTemplate?.id ?? '';
-    if (!firstImage || !templateId || !supportsTemplateVariableAutofill) return '';
-    return `${templateId}::${firstImage}`;
-  }, [selectedTemplate, supportsTemplateVariableAutofill, uploadedImages]);
-
-  const analyzeSuiteTemplateVariables = useCallback(async (source: 'upload' | 'generate') => {
+  const analyzeSuiteTemplateVariables = useCallback(async () => {
     if (!selectedTemplate) return;
     if (!supportsTemplateVariableAutofill) return;
     if (!hasGeminiApiKeyConfigured()) return;
     const firstImage = uploadedImages[0]?.url;
     if (!firstImage) return;
 
-    const analyzeKey = `${selectedTemplate.id}::${firstImage}`;
-    if (source === 'upload' && analyzeKey === lastTemplateVariableAnalyzeKeyRef.current && lastTemplateVariableAnalyzeSucceededRef.current) {
-      return;
-    }
-
     const seq = templateVariableAnalyzeSeqRef.current + 1;
     templateVariableAnalyzeSeqRef.current = seq;
     setIsTemplateVariableAnalyzing(true);
-    lastTemplateVariableAnalyzeKeyRef.current = analyzeKey;
-    lastTemplateVariableAnalyzeSucceededRef.current = false;
 
     try {
       const parsed = await parseSuiteTemplateVariablesFromImage({
@@ -437,9 +421,10 @@ export function SuiteGeneratorView() {
         return next;
       });
 
-      lastTemplateVariableAnalyzeSucceededRef.current = true;
       if (changed > 0) {
-        toast.success(source === 'upload' ? `已自动识图并更新 ${changed} 个套图变量` : `AI 识图已更新 ${changed} 个套图变量`);
+        toast.success(`AI 识图已更新 ${changed} 个套图变量`);
+      } else {
+        toast.message('AI 识图完成，套图变量无需更新');
       }
     } catch (e: unknown) {
       if (seq !== templateVariableAnalyzeSeqRef.current) return;
@@ -482,19 +467,6 @@ export function SuiteGeneratorView() {
     selectedTemplate,
     usePlatformStandard,
   ]);
-
-  useEffect(() => {
-    const key = getTemplateVariableAnalyzeKey();
-    if (!key) {
-      lastTemplateVariableAnalyzeKeyRef.current = '';
-      lastTemplateVariableAnalyzeSucceededRef.current = false;
-      return;
-    }
-    if (!hasGeminiApiKeyConfigured()) return;
-    if (isTemplateVariableAnalyzing) return;
-    if (key === lastTemplateVariableAnalyzeKeyRef.current && lastTemplateVariableAnalyzeSucceededRef.current) return;
-    void analyzeSuiteTemplateVariables('upload');
-  }, [analyzeSuiteTemplateVariables, getTemplateVariableAnalyzeKey, isTemplateVariableAnalyzing]);
 
   useEffect(() => {
     const prev = prevSuiteTemplateVariablesRef.current;
@@ -552,8 +524,6 @@ export function SuiteGeneratorView() {
     const initialTemplateVariables = getSuiteTemplateDefaultVariables(tpl.id);
     setSuiteTemplateVariables(initialTemplateVariables);
     prevSuiteTemplateVariablesRef.current = initialTemplateVariables;
-    lastTemplateVariableAnalyzeKeyRef.current = '';
-    lastTemplateVariableAnalyzeSucceededRef.current = false;
     updateGenerationContext({
       scene: preset.scene,
       stylePreset: preset.stylePreset ?? undefined,
@@ -698,15 +668,6 @@ export function SuiteGeneratorView() {
       return;
     }
 
-    if (supportsTemplateVariableAutofill && uploadedImages.length > 0 && hasGeminiApiKeyConfigured()) {
-      const key = getTemplateVariableAnalyzeKey();
-      const analyzedCurrentImage =
-        key && key === lastTemplateVariableAnalyzeKeyRef.current && lastTemplateVariableAnalyzeSucceededRef.current;
-      if (!analyzedCurrentImage) {
-        await analyzeSuiteTemplateVariables('generate');
-      }
-    }
-
     if (!inputValue.trim() && uploadedImages.length === 0) {
       toast.error('请输入全局商品描述或上传参考图');
       return;
@@ -803,6 +764,27 @@ export function SuiteGeneratorView() {
     }
   };
 
+  const handleAnalyzeSuiteProduct = async () => {
+    if (!selectedTemplate) {
+      toast.error('请先选择套图模板');
+      return;
+    }
+    if (uploadedImages.length === 0) {
+      toast.error('请先上传参考图');
+      return;
+    }
+    if (!hasGeminiApiKeyConfigured()) {
+      toast.error('未配置 VITE_GOOGLE_API_KEY，无法执行模板识图');
+      return;
+    }
+    if (!supportsTemplateVariableAutofill) {
+      toast.message('当前套图模板暂不支持变量识别');
+      return;
+    }
+    if (isTemplateVariableAnalyzing) return;
+    await analyzeSuiteTemplateVariables();
+  };
+
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mt-2">
       {!selectedTemplate ? (
@@ -813,8 +795,6 @@ export function SuiteGeneratorView() {
             const initialTemplateVariables = getSuiteTemplateDefaultVariables(tpl.id);
             setSuiteTemplateVariables(initialTemplateVariables);
             prevSuiteTemplateVariablesRef.current = initialTemplateVariables;
-            lastTemplateVariableAnalyzeKeyRef.current = '';
-            lastTemplateVariableAnalyzeSucceededRef.current = false;
             const nextGlobal = (
               applySuiteSemanticOptimizations(
                 applySuiteTemplateVariables(getSuiteTemplateDefaultGlobalPrompt(tpl.id), initialTemplateVariables),
@@ -857,8 +837,6 @@ export function SuiteGeneratorView() {
                   setActiveSuiteTaskId(null);
                   setSuiteTemplateVariables({});
                   prevSuiteTemplateVariablesRef.current = {};
-                  lastTemplateVariableAnalyzeKeyRef.current = '';
-                  lastTemplateVariableAnalyzeSucceededRef.current = false;
                 }}
                 disabled={isGenerating}
               >
@@ -916,6 +894,15 @@ export function SuiteGeneratorView() {
                 >
                   <Plus className="w-4 h-4" />
                   上传参考图
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void handleAnalyzeSuiteProduct()}
+                  disabled={isGenerating || isTemplateVariableAnalyzing || uploadedImages.length === 0}
+                >
+                  {isTemplateVariableAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                  {isTemplateVariableAnalyzing ? '识别中...' : 'AI 识别商品'}
                 </Button>
                 <div className="flex-1">
                   <Textarea
@@ -1075,8 +1062,8 @@ export function SuiteGeneratorView() {
                     </Button>
                   ) : (
                     <Button type="button" onClick={handleStart} disabled={isTemplateVariableAnalyzing}>
-                      {isTemplateVariableAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                      {isTemplateVariableAnalyzing ? '识别商品中' : '开始生成'}
+                      <Send className="w-4 h-4" />
+                      开始生成
                     </Button>
                   )}
                 </div>
