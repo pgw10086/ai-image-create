@@ -806,26 +806,19 @@ function sanitizeConfidence(input: any) {
 
 function sanitizeCopyVariables(input: any): SmartLayoutCopyVariables | undefined {
   if (!input || typeof input !== 'object') return undefined;
-  const allowedKeys: Array<keyof SmartLayoutCopyVariables> = [
-    'PRODUCT',
-    'TITLE',
-    'SUBTITLE',
-    'CTA',
-    'BADGE',
-    'PRICE',
-    'BULLET_1',
-    'BULLET_2',
-    'BULLET_3',
-    'BULLET_4',
-    'BULLET_5',
-  ];
   const out: SmartLayoutCopyVariables = {};
-  for (const key of allowedKeys) {
-    const raw = (input as any)[key];
-    if (typeof raw !== 'string') continue;
-    const value = raw.trim();
+  const entries = Object.entries(input as Record<string, unknown>);
+  const isValidKey = (k: string) => /^[A-Z0-9_]{2,32}$/.test((k || '').trim());
+  let count = 0;
+  for (const [kRaw, vRaw] of entries) {
+    if (count >= 50) break;
+    const key = (kRaw || '').toString().trim().toUpperCase();
+    if (!isValidKey(key)) continue;
+    if (typeof vRaw !== 'string') continue;
+    const value = vRaw.trim();
     if (!value) continue;
     (out as any)[key] = value;
+    count += 1;
   }
   return Object.keys(out).length > 0 ? out : undefined;
 }

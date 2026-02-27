@@ -15,9 +15,17 @@ import { useAppStore } from './store/appStore';
 import defaultSmartLayoutTemplatesRaw from '@/default-smart-layout-templates/smart-layout-templates-1772010604008.json?raw';
 import { ensureDefaultSmartLayoutTemplatesImported } from '@/lib/smartLayoutPersistence';
 
+function hashStringDjb2(input: string) {
+  let hash = 5381;
+  for (let i = 0; i < input.length; i++) {
+    hash = ((hash << 5) + hash) ^ input.charCodeAt(i);
+  }
+  return (hash >>> 0).toString(16);
+}
+
 ensureDefaultSmartLayoutTemplatesImported({
   raw: defaultSmartLayoutTemplatesRaw,
-  sourceId: 'smart-layout-templates-1772010604008.json@v3',
+  sourceId: `default-smart-layout-templates@${hashStringDjb2(defaultSmartLayoutTemplatesRaw)}`,
 });
 
 function App() {

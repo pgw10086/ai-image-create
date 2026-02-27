@@ -189,6 +189,8 @@ export function SmartLayoutView({ className }: { className?: string }) {
       slots: entry.slots.map((slot) => ({
         status: slot.status,
         url: slot.url,
+        draftUrl: slot.draftUrl,
+        phase: slot.phase,
         error: slot.error,
       })),
     })) as SmartLayoutHistoryRecord[];
@@ -200,6 +202,17 @@ export function SmartLayoutView({ className }: { className?: string }) {
     }
     if (ok) historySaveFailedRef.current = false;
   }, [resultHistory]);
+
+  useEffect(() => {
+    if (resultSlots.length > 0) return;
+    if (resultHistory.length === 0) return;
+    const latest = resultHistory[0];
+    if (!latest) return;
+    currentRunIdRef.current = latest.id;
+    setResultSlots(latest.slots);
+    setRequestedImageCount(latest.requestedImageCount);
+    setActiveResultId('current');
+  }, [resultHistory, resultSlots.length]);
 
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
@@ -586,13 +599,28 @@ export function SmartLayoutView({ className }: { className?: string }) {
     });
   };
 
-  const applyZoneEnrichment = (inputZones: LayoutZone[]) => {
+  const normalizeCanvasSize = (raw: unknown) => {
+    const wRaw = (raw as { width?: unknown } | null | undefined)?.width;
+    const hRaw = (raw as { height?: unknown } | null | undefined)?.height;
+    const wNum = typeof wRaw === 'number' ? wRaw : Number(wRaw);
+    const hNum = typeof hRaw === 'number' ? hRaw : Number(hRaw);
+    const clamp = (n: number) => Math.max(200, Math.min(10000, Math.round(n)));
+    const width = Number.isFinite(wNum) && wNum > 0 ? clamp(wNum) : canvasSize.width;
+    const height = Number.isFinite(hNum) && hNum > 0 ? clamp(hNum) : canvasSize.height;
+    return { width, height };
+  };
+
+  const applyZoneEnrichmentForCanvas = (inputZones: LayoutZone[], nextCanvasSize: { width: number; height: number }) => {
     const withColor = inputZones.map(z => ({
       ...z,
       semanticColor: z.semanticColor || SEMANTIC_COLORS[z.type],
     }));
-    const clamped = clampZonesToCanvas(withColor, canvasSize);
-    return enrichZonesForPrompt(clamped, canvasSize);
+    const clamped = clampZonesToCanvas(withColor, nextCanvasSize);
+    return enrichZonesForPrompt(clamped, nextCanvasSize);
+  };
+
+  const applyZoneEnrichment = (inputZones: LayoutZone[]) => {
+    return applyZoneEnrichmentForCanvas(inputZones, canvasSize);
   };
 
   const handleZoneUpdate = (updatedZone: LayoutZone) => {
@@ -623,19 +651,9 @@ export function SmartLayoutView({ className }: { className?: string }) {
   const normalizedZones = useMemo(() => applyZoneEnrichment(zones), [zones, canvasSize.width, canvasSize.height]);
 
   const normalizeCopyVariableKey = (keyRaw: string): CopyVariableKey | null => {
-    const key = (keyRaw || '').toString().trim();
-    if (
-      key === 'PRODUCT' ||
-      key === 'TITLE' ||
-      key === 'SUBTITLE' ||
-      key === 'CTA' ||
-      key === 'BADGE' ||
-      key === 'PRICE'
-    ) {
-      return key;
-    }
-    if (/^BULLET_[1-5]$/.test(key)) return key as CopyVariableKey;
-    return null;
+    const key = (keyRaw || '').toString().trim().toUpperCase();
+    if (!/^[A-Z0-9_]{2,32}$/.test(key)) return null;
+    return key as CopyVariableKey;
   };
 
   const labelCopyVariableKey = (key: CopyVariableKey) => {
@@ -649,7 +667,8 @@ export function SmartLayoutView({ className }: { className?: string }) {
     if (key === 'BULLET_2') return '卖点 2';
     if (key === 'BULLET_3') return '卖点 3';
     if (key === 'BULLET_4') return '卖点 4';
-    return '卖点 5';
+    if (key === 'BULLET_5') return '卖点 5';
+    return key;
   };
 
   const extractCopyVariableKeysFromText = (text: string): CopyVariableKey[] => {
@@ -1159,9 +1178,9 @@ export function SmartLayoutView({ className }: { className?: string }) {
   };
 
   const applyTemplate = (t: SmartLayoutTemplateV1) => {
-    const nextCanvasSize = t.payload.canvasSize;
+    const nextCanvasSize = normalizeCanvasSize(t.payload.canvasSize);
     setCanvasSize(nextCanvasSize);
-    setZones(applyZoneEnrichment(t.payload.zones || []));
+    setZones(applyZoneEnrichmentForCanvas(t.payload.zones || [], nextCanvasSize));
     setSettings(normalizeSettings(t.payload.settings));
     setCopyVariables({ ...defaultCopyVariables, ...((t.payload.copyVariables as SmartLayoutCopyVariables) || {}) });
     if (t.payload.productTemplateIntent && t.payload.productTemplateIntent.schemaVersion === 1) {
@@ -1204,8 +1223,9 @@ export function SmartLayoutView({ className }: { className?: string }) {
       setDraftOfferOpen(false);
       return;
     }
-    setCanvasSize(draft.canvasSize);
-    setZones(applyZoneEnrichment(draft.zones || []));
+    const nextCanvasSize = normalizeCanvasSize(draft.canvasSize);
+    setCanvasSize(nextCanvasSize);
+    setZones(applyZoneEnrichmentForCanvas(draft.zones || [], nextCanvasSize));
     setSettings(normalizeSettings(draft.settings));
     setCopyVariables({ ...defaultCopyVariables, ...((draft.copyVariables as SmartLayoutCopyVariables) || {}) });
     if (draft.productTemplateIntent && draft.productTemplateIntent.schemaVersion === 1) {
@@ -1895,28 +1915,6 @@ export function SmartLayoutView({ className }: { className?: string }) {
               </div>
 
               <DropdownMenuSeparator />
-              <DropdownMenuLabel className="text-white/70">商品主体</DropdownMenuLabel>
-              <div className="px-2 pb-2">
-                <div className="flex items-center gap-2">
-                  <Input
-                    value={(copyVariables.PRODUCT || '').toString()}
-                    onChange={(e) => setCopyVariables((prev) => ({ ...prev, PRODUCT: e.target.value }))}
-                    className="h-8 flex-1 bg-white/5 border-white/10 text-white"
-                    placeholder="用于替换 {PRODUCT}"
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    disabled={!(copyVariables.PRODUCT || '').toString().trim()}
-                    onClick={() => setCopyVariables((prev) => ({ ...prev, PRODUCT: '' }))}
-                    className="h-8 w-8 text-white/60 hover:text-white hover:bg-white/10 disabled:opacity-30"
-                  >
-                    <XCircle className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-
-              <DropdownMenuSeparator />
               <DropdownMenuLabel className="text-white/70">渲染风格</DropdownMenuLabel>
               <div className="px-2 pb-2">
                 <Select
@@ -2024,7 +2022,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
                 }}
               >
                 <Upload className="h-4 w-4" />
-                {isParsingTemplate ? '解析中...' : '从商品原型生成画布'}
+                {isParsingTemplate ? '解析中...' : '从商品设计图复刻布局'}
               </DropdownMenuItem>
               <DropdownMenuItem
                 disabled={isGeneratingProductTemplate || isGenerating || isParsingTemplate}
@@ -2034,7 +2032,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
                 }}
               >
                 <Wand2 className="h-4 w-4" />
-                {isGeneratingProductTemplate ? '生成中...' : '从商品设计图复刻布局'}
+                {isGeneratingProductTemplate ? '生成中...' : '根据商品原型生成布局'}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuLabel className="text-white/70">草稿</DropdownMenuLabel>
@@ -2232,7 +2230,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="right" sideOffset={8}>
-                {isParsingTemplate ? '解析中...' : '从商品原型生成画布'}
+                {isParsingTemplate ? '解析中...' : '从商品设计图复刻布局'}
               </TooltipContent>
             </Tooltip>
 
@@ -2249,7 +2247,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="right" sideOffset={8}>
-                {isGeneratingProductTemplate ? '生成中...' : '从商品设计图复刻布局'}
+                {isGeneratingProductTemplate ? '生成中...' : '根据商品原型生成布局'}
               </TooltipContent>
             </Tooltip>
           </div>

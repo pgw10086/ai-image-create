@@ -50,7 +50,7 @@ export interface SmartLayoutSettings {
   enableTwoStageGeneration: boolean; // 两阶段生成：先构图草稿再精修（默认开启）
 }
 
-export type CopyVariableKey =
+export type BuiltInCopyVariableKey =
   | 'PRODUCT'
   | 'TITLE'
   | 'SUBTITLE'
@@ -58,6 +58,8 @@ export type CopyVariableKey =
   | 'BADGE'
   | 'PRICE'
   | `BULLET_${1 | 2 | 3 | 4 | 5}`;
+
+export type CopyVariableKey = BuiltInCopyVariableKey | (string & {});
 
 export type SmartLayoutCopyVariables = Partial<Record<CopyVariableKey, string>>;
 
@@ -136,6 +138,8 @@ export interface SmartLayoutTemplateV1 {
   createdAt: number;
   updatedAt: number;
   snapshotDataUrl?: string;
+  origin?: 'default' | 'user' | 'imported';
+  originSourceId?: string;
   payload: {
     canvasSize: { width: number; height: number };
     zones: LayoutZone[];
