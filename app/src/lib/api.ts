@@ -18,7 +18,8 @@ const GENERATION_TIMEOUT_PER_IMAGE_MS = 30000;
 const GENERATION_TIMEOUT_REFERENCE_BONUS_MS = 15000;
 const GENERATION_TIMEOUT_GEMINI_BONUS_MS = 30000;
 const GENERATION_TIMEOUT_MAX_MS = 300000;
-const GEMINI_VISION_MODEL_ID = 'gemini-3-pro';
+// Gemini 3 Pro series model code from official docs. `gemini-3-pro` is invalid and causes 404.
+const GEMINI_VISION_MODEL_ID = 'gemini-3.1-pro-preview';
 
 type ImageInlineData = {
   data: string;
