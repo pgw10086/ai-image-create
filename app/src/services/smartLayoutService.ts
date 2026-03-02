@@ -139,7 +139,21 @@ function buildRegionSuffix(context?: GenerationContext) {
   });
 }
 
-function mergeRegionPrompt(zone: LayoutZone, context?: GenerationContext) {
+function buildRegionSuffixForReference(context?: GenerationContext) {
+  const storeContext = toStoreContext(context);
+  return buildPromptWithContext({
+    basePrompt: '',
+    context: storeContext,
+    allowText: false,
+    includeSceneHint: false,
+    includePlatformHint: false,
+    includeStyleHint: false,
+    includeLanguageHint: true,
+    includeAllowTextHint: false,
+  });
+}
+
+function mergeRegionPrompt(zone: LayoutZone, context?: GenerationContext, hasReferenceImage = false) {
   const parts = [zone.prompt?.trim(), zone.autoCaption?.trim()].filter(Boolean) as string[];
   let merged = parts.join(', ');
   if (!merged) {
@@ -149,8 +163,12 @@ function mergeRegionPrompt(zone: LayoutZone, context?: GenerationContext) {
       merged = zone.type === 'background' ? 'background' : zone.type === 'prop' ? 'prop' : 'main subject';
     }
   }
-  const suffix = buildRegionSuffix(context);
-  return suffix ? `${merged}. ${suffix}` : merged;
+  const suffix = hasReferenceImage ? buildRegionSuffixForReference(context) : buildRegionSuffix(context);
+  const base = suffix ? `${merged}. ${suffix}` : merged;
+  if (!hasReferenceImage) return base;
+  return context?.language === 'zh'
+    ? `${base}。外观（材质/配色/纹理/细节/光照）以对应参考图为准，若文字描述与参考图冲突则忽略冲突描述。`
+    : `${base}. Match the corresponding reference image for appearance (materials/colors/textures/details/lighting). If text conflicts with the reference image, ignore the conflicting text.`;
 }
 
 function getTypeZh(type: LayoutZone['type']) {
@@ -298,7 +316,8 @@ export function composeLayoutPrompt(zones: LayoutZone[], context?: GenerationCon
         r: Math.max(0, roundInt(canvasW - (bboxPx.x + bboxPx.w))),
         b: Math.max(0, roundInt(canvasH - (bboxPx.y + bboxPx.h))),
       };
-      const prompt = mergeRegionPrompt(z, context);
+      const hasReferenceImage = Boolean(z.refImageId || z.refImage);
+      const prompt = mergeRegionPrompt(z, context, hasReferenceImage);
       const regionNo = idx + 1;
       const sketchColor = z.sketchColor || z.semanticColor || '';
       const alignRules =
@@ -424,7 +443,7 @@ export async function composeLayoutForGeneration(
         zIndex: z.zIndex,
         locationHint: getLocationHintFromPx(bbox, canvasW, canvasH),
         bbox,
-        prompt: mergeRegionPrompt(z, request.context),
+        prompt: mergeRegionPrompt(z, request.context, hasReferenceImage),
         hasReferenceImage,
       };
     });
@@ -445,8 +464,8 @@ export async function composeLayoutForGeneration(
     imageNoToRegions.set(imageNo, list.slice().sort((a, b) => a - b));
   }
   const imageRefLines = [
-    '图1：位置/构图参考图（layoutSketch）',
-    ...referenceItems.map(i => `图${i.imageNo}：参考图（${getTypeZh(i.type)}），用于 Region ${imageNoToRegions.get(i.imageNo)?.join(',') || ''}`.trim()),
+    '图1：位置/构图参考图（layoutSketch），仅用于区域位置与构图，不代表材质/配色/风格。',
+    ...referenceItems.map(i => `图${i.imageNo}：参考图（${getTypeZh(i.type)}），外观真值，用于 Region ${imageNoToRegions.get(i.imageNo)?.join(',') || ''}`.trim()),
   ];
 
   const regionLines = regionPrompts.map(r => {
@@ -454,7 +473,7 @@ export async function composeLayoutForGeneration(
     const sketchColor = zone?.sketchColor || zone?.semanticColor || '';
     const colorZh = getColorZh(r.type, sketchColor);
     const imageNo = regionNoToImageNo.get(r.regionNo);
-    const refText = imageNo ? `参考图：图${imageNo}` : '参考图：无';
+    const refText = imageNo ? `参考图：图${imageNo}（外观真值）` : '参考图：无';
     const anchor = computeAnchorPx(r.bbox, r.locationHint);
     const padding = computePaddingPx(r.bbox);
     const margins = {
@@ -473,7 +492,39 @@ export async function composeLayoutForGeneration(
     return `Region ${r.regionNo} [Plane: ${getPlaneEn(r.type)} | Location: ${r.locationHint} | BBox: (x=${r.bbox.x}px,y=${r.bbox.y}px,w=${r.bbox.w}px,h=${r.bbox.h}px) | AnchorPx: (ax=${anchor.ax}px,ay=${anchor.ay}px) | Padding: >=${padding}px | Margins: (l=${margins.l}px,t=${margins.t}px,r=${margins.r}px,b=${margins.b}px) | Depth: zIndex=${r.zIndex} | 图1中${colorZh}${getTypeZh(r.type)}区域 | ${refText} | color=${sketchColor}] Prompt: ${r.prompt}。${alignRules}`;
   });
 
+  const referenceBoundLines = regionPrompts
+    .filter(r => Boolean(regionNoToImageNo.get(r.regionNo)))
+    .map(r => {
+      const imageNo = regionNoToImageNo.get(r.regionNo);
+      if (!imageNo) return '';
+      return request.context?.language === 'zh'
+        ? `- Region ${r.regionNo}：外观严格参考 图${imageNo}（材质/配色/纹理/细节/光照/镜头），并保持在 bbox 内。`
+        : `- Region ${r.regionNo}: match Image ${imageNo} exactly for appearance and keep it inside bbox.`;
+    })
+    .filter(Boolean);
+
+  const referenceFirstPolicyLines =
+    request.context?.language === 'zh'
+      ? ([
+        'REFERENCE_FIRST_POLICY:',
+        '1) 图2.. 是外观真值参考（材质/配色/纹理/细节/光照/镜头），必须严格参考。',
+        '2) 若任何文字提示与参考图冲突，忽略冲突文字，以参考图为准。',
+        '3) 图1（layoutSketch）仅用于位置/构图，不定义风格/颜色/材质。',
+        '4) {PROJECT} 等占位符仅用于语义辅助，不用于覆盖参考图外观。',
+        ...referenceBoundLines,
+      ] as string[])
+      : ([
+        'REFERENCE_FIRST_POLICY:',
+        '1) Image 2.. are authoritative references for appearance (materials/colors/textures/details/lighting/camera). Follow them exactly.',
+        '2) If any text instruction conflicts with a reference image, ignore the conflicting text and follow the image.',
+        '3) Image 1 (layoutSketch) is for placement/composition only; it does NOT define style or colors.',
+        '4) Placeholders like {PROJECT} are semantic aids only; do not use them to override the reference image appearance.',
+        ...referenceBoundLines,
+      ] as string[]);
+
   const combinedPrompt = [
+    ...referenceFirstPolicyLines,
+    '',
     'GLOBAL_PROMPT:',
     globalPrompt || '',
     '',
@@ -500,6 +551,7 @@ export async function composeLayoutForGeneration(
     image: [layoutSketchBase64, ...referenceImages],
     size,
     model: request.context?.model,
+    guidance_scale: referenceImages.length > 0 ? 3 : undefined,
     sequential_image_generation: 'disabled',
   };
 

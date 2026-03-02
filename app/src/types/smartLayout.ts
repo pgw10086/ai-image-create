@@ -234,6 +234,7 @@ export interface LayoutCompositionResult {
     image: string[];
     size?: string;
     model?: string;
+    guidance_scale?: number;
     sequential_image_generation: 'disabled';
   };
   size: string;

@@ -24,7 +24,6 @@ import type { GenerateImageResponse } from '@/types/api';
 import {
   hasGeminiApiKeyConfigured,
   isTaihaoGeminiModel,
-  computeGroupGeneration,
   resolveModelId,
   resolveSizeFromCanvasForModel,
   resolveSizeFromRatioMode,
@@ -151,6 +150,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
     finalPrompt: string;
     size: string;
     model: string;
+    guidanceScale?: number;
     sizeHint?: string;
   }>({
     previewSketch: '',
@@ -160,6 +160,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
     finalPrompt: '',
     size: '2048x2048',
     model: 'doubao-seedream-4-5-251128',
+    guidanceScale: undefined,
   });
   const [isFinalPromptEdited, setIsFinalPromptEdited] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -827,6 +828,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
         finalPrompt: generation.generateParams.prompt,
         size: requestSize ?? generation.size,
         model: modelId,
+        guidanceScale: generation.generateParams.guidance_scale,
         sizeHint,
       };
     } catch (error: unknown) {
@@ -892,6 +894,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
           image: [previewData.generationSketch, ...previewData.referenceImages],
           size,
           model: previewData.model,
+          guidance_scale: previewData.guidanceScale,
           sequential_image_generation: 'disabled',
           stream: false,
         });
@@ -915,7 +918,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
     }
   };
 
-  const confirmGenerate = async (data: { previewSketch: string; generationSketch: string; referenceImages: string[]; globalPrompt: string; finalPrompt: string; size: string; model: string; sizeHint?: string }) => {
+  const confirmGenerate = async (data: { previewSketch: string; generationSketch: string; referenceImages: string[]; globalPrompt: string; finalPrompt: string; size: string; model: string; guidanceScale?: number; sizeHint?: string }) => {
     setIsGenerating(true);
     try {
       abortControllerRef.current?.abort();
@@ -924,13 +927,8 @@ export function SmartLayoutView({ className }: { className?: string }) {
       const prompt = data.sizeHint ? `${data.finalPrompt}\n\nOUTPUT_SIZE_HINT:\n${data.sizeHint}` : data.finalPrompt;
       const size = data.model.includes('seededit-3.0-i2i') ? undefined : data.size;
       const requestedCount = Math.max(1, Math.min(15, Math.floor(generationContext.imageCount || 1)));
-      const referenceCount = 1 + (data.referenceImages?.length || 0);
-      const group = computeGroupGeneration({
-        requestedCount,
-        referenceCount,
-        modelId: data.model,
-      });
       const image = [data.generationSketch, ...data.referenceImages];
+      const guidanceScale = data.guidanceScale;
       const concurrencyLimit = 3;
       const enableTwoStage = settings.enableTwoStageGeneration;
 
@@ -973,12 +971,8 @@ export function SmartLayoutView({ className }: { className?: string }) {
         setResultSlots((prev) => prev.map((slot, idx) => (idx === index ? { ...slot, ...patch } : slot)));
       };
 
-      if (enableTwoStage && requestedCount > 1) {
-        toast.message('两阶段生成将自动分次生成以补齐张数');
-      } else if (requestedCount > 1 && group.sequential_image_generation !== 'auto') {
-        toast.message('当前模型不支持一次生成多张，将自动分次生成以补齐张数');
-      } else if (requestedCount > 1 && group.maxImages < requestedCount) {
-        toast.message(`由于参考图数量限制，本次最多可组图生成 ${group.maxImages} 张，将自动补齐到 ${requestedCount} 张`);
+      if (requestedCount > 1) {
+        toast.message(enableTwoStage ? '两阶段生成将并发分次生成以补齐张数' : '将并发分次生成以补齐张数');
       }
 
       const urls: string[] = [];
@@ -996,118 +990,95 @@ export function SmartLayoutView({ className }: { className?: string }) {
         updateSlot(slotIndex, { status: 'success', url, phase: 'final', error: undefined });
       };
 
-      let filled = 0;
+      const slotIndices = Array.from({ length: requestedCount }, (_, i) => i);
 
-      if (!enableTwoStage && group.sequential_image_generation === 'auto' && !controller.signal.aborted) {
-        try {
-          const response = await generateImage({
-            prompt,
-            image,
-            size,
-            model: data.model,
-            sequential_image_generation: 'auto',
-            sequential_image_generation_options: { max_images: group.maxImages },
-            stream: false,
-            signal: controller.signal,
-          });
-          const nextUrls = response.data?.map((item) => item.url).filter((v): v is string => Boolean(v)) ?? [];
-          maybeToastMock(response);
-          for (const u of nextUrls) {
-            if (filled >= requestedCount) break;
-            pushUrl(filled, u);
-            filled += 1;
-          }
-        } catch (error: unknown) {
-          if (controller.signal.aborted) {
-            toast.message('已取消生成');
-          } else {
-            const message = error instanceof Error ? error.message : '未知错误';
-            toast.error(`组图生成失败：${message}`);
-          }
-        }
-      }
+      const runSlotWorkers = async (slotIndices: number[]) => {
+        if (slotIndices.length === 0) return;
+        let cursor = 0;
+        const workers = Array.from({ length: Math.min(concurrencyLimit, slotIndices.length) }, async () => {
+          while (!controller.signal.aborted) {
+            const next = cursor;
+            cursor += 1;
+            if (next >= slotIndices.length) return;
+            const slotIndex = slotIndices[next];
+            updateSlot(slotIndex, { status: 'processing', phase: enableTwoStage ? 'draft' : undefined, error: undefined });
+            try {
+              if (!enableTwoStage) {
+                const response = await generateImage({
+                  prompt,
+                  image,
+                  size,
+                  model: data.model,
+                  guidance_scale: guidanceScale,
+                  sequential_image_generation: 'disabled',
+                  stream: false,
+                  signal: controller.signal,
+                });
+                maybeToastMock(response);
+                const url = response.data?.[0]?.url;
+                if (url) {
+                  pushUrl(slotIndex, url);
+                } else {
+                  updateSlot(slotIndex, { status: 'failed', error: response.message || '生成失败' });
+                }
+                continue;
+              }
 
-      const slotIndices = Array.from({ length: requestedCount - filled }, (_, i) => i + filled);
-      let cursor = 0;
-      const workers = Array.from({ length: Math.min(concurrencyLimit, slotIndices.length) }, async () => {
-        while (!controller.signal.aborted) {
-          const next = cursor;
-          cursor += 1;
-          if (next >= slotIndices.length) return;
-          const slotIndex = slotIndices[next];
-          updateSlot(slotIndex, { status: 'processing', phase: enableTwoStage ? 'draft' : undefined, error: undefined });
-          try {
-            if (!enableTwoStage) {
-              const response = await generateImage({
+              const draftResponse = await generateImage({
                 prompt,
-                image,
+                image: [data.generationSketch],
                 size,
                 model: data.model,
                 sequential_image_generation: 'disabled',
                 stream: false,
                 signal: controller.signal,
               });
-              maybeToastMock(response);
-              const url = response.data?.[0]?.url;
-              if (url) {
-                pushUrl(slotIndex, url);
-              } else {
-                updateSlot(slotIndex, { status: 'failed', error: response.message || '生成失败' });
+              maybeToastMock(draftResponse);
+              const draftUrl = draftResponse.data?.[0]?.url;
+              if (!draftUrl) {
+                updateSlot(slotIndex, { status: 'failed', error: draftResponse.message || '构图阶段生成失败' });
+                continue;
               }
+              updateSlot(slotIndex, { draftUrl, phase: 'refine' });
+              if (controller.signal.aborted) {
+                updateSlot(slotIndex, { status: 'cancelled', error: '已停止' });
+                return;
+              }
+
+              const refineImages = data.referenceImages?.length ? [draftUrl, ...data.referenceImages] : [draftUrl];
+              const refineResponse = await generateImage({
+                prompt,
+                image: refineImages,
+                size,
+                model: data.model,
+                guidance_scale: guidanceScale,
+                sequential_image_generation: 'disabled',
+                stream: false,
+                signal: controller.signal,
+              });
+              maybeToastMock(refineResponse);
+              const finalUrl = refineResponse.data?.[0]?.url;
+              if (finalUrl) {
+                pushUrl(slotIndex, finalUrl);
+              } else {
+                updateSlot(slotIndex, { status: 'failed', phase: 'refine', error: refineResponse.message || '精修阶段生成失败' });
+              }
+            } catch (error: unknown) {
+              if (controller.signal.aborted) {
+                updateSlot(slotIndex, { status: 'cancelled', error: '已停止' });
+                return;
+              }
+              const message = error instanceof Error ? error.message : '未知错误';
+              updateSlot(slotIndex, { status: 'failed', error: message });
+              toast.error(`第 ${slotIndex + 1} 张生成失败：${message}`);
               continue;
             }
-
-            const draftResponse = await generateImage({
-              prompt,
-              image: [data.generationSketch],
-              size,
-              model: data.model,
-              sequential_image_generation: 'disabled',
-              stream: false,
-              signal: controller.signal,
-            });
-            maybeToastMock(draftResponse);
-            const draftUrl = draftResponse.data?.[0]?.url;
-            if (!draftUrl) {
-              updateSlot(slotIndex, { status: 'failed', error: draftResponse.message || '构图阶段生成失败' });
-              continue;
-            }
-            updateSlot(slotIndex, { draftUrl, phase: 'refine' });
-            if (controller.signal.aborted) {
-              updateSlot(slotIndex, { status: 'cancelled', error: '已停止' });
-              return;
-            }
-
-            const refineImages = data.referenceImages?.length ? [draftUrl, ...data.referenceImages] : [draftUrl];
-            const refineResponse = await generateImage({
-              prompt,
-              image: refineImages,
-              size,
-              model: data.model,
-              sequential_image_generation: 'disabled',
-              stream: false,
-              signal: controller.signal,
-            });
-            maybeToastMock(refineResponse);
-            const finalUrl = refineResponse.data?.[0]?.url;
-            if (finalUrl) {
-              pushUrl(slotIndex, finalUrl);
-            } else {
-              updateSlot(slotIndex, { status: 'failed', phase: 'refine', error: refineResponse.message || '精修阶段生成失败' });
-            }
-          } catch (error: unknown) {
-            if (controller.signal.aborted) {
-              updateSlot(slotIndex, { status: 'cancelled', error: '已停止' });
-              return;
-            }
-            const message = error instanceof Error ? error.message : '未知错误';
-            updateSlot(slotIndex, { status: 'failed', error: message });
-            toast.error(`第 ${slotIndex + 1} 张生成失败：${message}`);
-            continue;
           }
-        }
-      });
-      await Promise.all(workers);
+        });
+        await Promise.all(workers);
+      };
+
+      await runSlotWorkers(slotIndices);
 
       if (urls.length === 0) {
         if (controller.signal.aborted) return;

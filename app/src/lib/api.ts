@@ -425,6 +425,7 @@ async function generateBySeedream(params: GenerateImageParams): Promise<Generate
     size = '2048x2048',
     model = 'doubao-seedream-4-5-251128',
     watermark = true,
+    guidance_scale,
     sequential_image_generation = 'disabled',
     sequential_image_generation_options,
     stream = false,
@@ -450,6 +451,7 @@ async function generateBySeedream(params: GenerateImageParams): Promise<Generate
     image,
     response_format: 'url',
     watermark,
+    guidance_scale,
   };
   const timeoutMs = resolveGenerationTimeoutMs(params);
 

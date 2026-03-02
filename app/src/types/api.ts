@@ -5,6 +5,7 @@ export interface GenerateImageParams {
   size?: string; // e.g. "2048x2048"
   model?: string;
   watermark?: boolean;
+  guidance_scale?: number;
   sequential_image_generation?: 'auto' | 'disabled';
   sequential_image_generation_options?: {
     max_images: number;

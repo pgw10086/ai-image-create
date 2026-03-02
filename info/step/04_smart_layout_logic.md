@@ -59,6 +59,7 @@ export interface LayoutCompositionResult {
     image: string[];
     size?: string;
     model?: string;
+    guidance_scale?: number;
     sequential_image_generation?: 'auto' | 'disabled';
     sequential_image_generation_options?: { max_images?: number };
   };
@@ -87,6 +88,7 @@ export interface LayoutCompositionResult {
     *   按照 `[背景] -> [环境/道具] -> [主体]` 的语义顺序进行拼接（可以通过 Zone 的 `type` 字段排序）。
     *   示例：“(Background: white studio), (Prop: wooden podium), (Main: red running shoes)”。
 *   **与顶部参数条的映射（必须）**：\n    *   `language='en'`：在 Prompt 中追加约束（如 “in English” 或将所有 Zone 描述输出为英文）。\n    *   `platform='amazon'`：追加平台规则提示（如白底、合规、构图建议）。\n    *   `stylePreset`：追加统一风格后缀（灯光、摄影风格、色调等）。\n    *   `scene`：决定 Prompt 模板骨架（例如详情图更偏“信息清晰、留白用于文案”的构图提示）。\n    *   `ratioMode/size`：需要在 Prompt 中显式写入输出尺寸提示（与 API `size` 双写），避免模型忽略比例要求。\n    以上规则必须以确定性的模板实现，避免依赖模型“猜”。\n*   **Region Prompter 段落（默认开启）**：最终 `combinedPrompt` 必须包含以下结构化片段（顺序固定）：\n    1) `GLOBAL_PROMPT:` 仅描述整体摄影棚、光照、镜头、风格。\n    2) `REGION_PROMPTS:` 每个区域一段，格式示例：\n       `Region 1 [Location: Center-Left (x=180px,y=280px,w=440px,h=500px)] Prompt: ...`\n    3) `DEPTH_TREE:` 描述遮挡顺序与覆盖关系，明确“谁覆盖谁”“禁止漂浮/嵌入”。\n    4) `RULES:` 强规则：不要画任何边框/编号/文字；对象必须在各自区域内；禁止漂浮；禁止嵌入。
+*   **参考图优先（新增，默认开启）**：在 `GLOBAL_PROMPT` 之前增加 `REFERENCE_FIRST_POLICY:` 段落。\n    *   有对应参考图的 Region：外观（材质/配色/纹理/细节/光照）以对应参考图为真值；若文字描述与参考图冲突则忽略冲突描述。\n    *   `图1(layoutSketch)` 仅用于位置/构图，不代表风格。\n    *   `{PROJECT}` 等占位符仅用于语义辅助，不用于覆盖参考图外观。\n    *   对有参考图的 Region：区域 prompt 的 context 后缀不再注入风格类描述（stylePreset 等），避免与参考图冲突。
 *   **图片编号（必须）**：最终 Prompt 必须明确多参考图的编号含义，避免模型混用素材：\n    *   `图1` 固定为 `layoutSketch`（位置/构图参考）。\n    *   `图2..` 为 `referenceImages[]`（Zone 上传素材图），并在对应 Region 行中标注“参考图：图N”。\n    *   预览弹窗应展示参考图缩略图并标注图号，供用户核对。
 *   **坐标体系（必须）**：最终 Prompt 必须输出 `COORDINATE_SYSTEM:` 段落，明确 x/y/z 轴规则（x/y 为像素坐标，z 为 zIndex 深度），并要求模型严格遵循。\n    *   建议同时输出 `AnchorPx`（确定性锚点坐标）与 `Margins/Padding`（对齐/留白策略）以增强可执行性。
 
@@ -98,6 +100,7 @@ export interface LayoutCompositionResult {
     4.  确认后，调用 `api.generateImage`（Image-to-Image 模式）。
 
 *   **API 参数要求**：\n    *   `image`: `[layoutSketchBase64, ...referenceImages]`\n    *   `prompt`: `combinedPrompt`\n    *   `sequential_image_generation`: 支持 `auto`（一次返回多张）或 `disabled`（单张）\n    *   `sequential_image_generation_options.max_images`: 当为 `auto` 时传入\n    *   `stream`: `false`\n    *   **取消**：需要支持 AbortSignal 以便用户在生成中点击“停止”中断请求
+\n    *   `guidance_scale`: 当存在 `referenceImages` 时可下调（降低文本支配性，提高“看图生成”的权重）
 \n*   **分次生成并发（必须）**：当需要用“单次生成”补齐张数时，前端应使用并发限流（例如并发 3）同时发起请求，并维护每张图的独立状态（生成中/成功/失败/已停止），失败不阻塞后续继续尝试。
 
 *   **后端能力分级**：\n    *   **Seedream 默认（当前）**：Region Prompter 仅作为 Prompt 文本约束；空间靠 `layoutSketch`；材质靠 `referenceImages`。\n    *   **可控后端增强（未来可选）**：当后端接入支持 Area Prompting 的生成管线时，直接把 `regionPrompts[]` 作为像素级区域控制输入（Zone A 区域仅受 Prompt A 控制），显著降低串色与串属性。\n
