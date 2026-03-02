@@ -57,7 +57,7 @@ interface Tag {
 }
 
 const tags: Tag[] = [
-  { id: 'model', label: '泰豪生图1.0', icon: Sparkles },
+  { id: 'model', label: '泰豪生图1', icon: Sparkles },
   { id: 'count', label: '6张', icon: Image },
   { id: 'platform', label: 'Amazon（亚马逊）', icon: ShoppingBag, isDropdown: true },
   { id: 'quality', label: '画质', icon: Sparkles },

@@ -129,7 +129,7 @@
         "generationContextSnapshot": {
           "platformId": "amazon",
           "language": "en",
-          "model": "泰豪生图1.0-pro",
+          "model": "泰豪生图1-pro",
           "imageCount": 1,
           "ratioMode": "智能比例",
           "qualityMode": "2K",
@@ -223,7 +223,7 @@
         "generationContextSnapshot": {
           "platformId": "amazon",
           "language": "en",
-          "model": "泰豪生图1.0-pro",
+          "model": "泰豪生图1-pro",
           "imageCount": 1,
           "ratioMode": "智能比例",
           "qualityMode": "2K",
@@ -452,7 +452,7 @@
         "generationContextSnapshot": {
           "platformId": "amazon",
           "language": "en",
-          "model": "泰豪生图1.0-pro",
+          "model": "泰豪生图1-pro",
           "imageCount": 4,
           "ratioMode": "智能比例",
           "qualityMode": "2K",

@@ -1,15 +1,12 @@
 import type { GenerationContext } from '@/store/appStore';
 import { calculateOptimalSize } from '@/lib/utils';
 
-export const TAIHAO_FLASH_MODEL_LABEL = '泰豪生图1.0';
+export const TAIHAO_FLASH_MODEL_LABEL = '泰豪生图1';
 export const TAIHAO_FLASH_MODEL_ID = 'doubao-seedream-4-5-251128';
-export const TAIHAO_PRO_MODEL_LABEL = '泰豪生图1.0-pro';
+export const TAIHAO_PRO_MODEL_LABEL = '泰豪生图1-pro';
 export const TAIHAO_PRO_MODEL_ID = 'gemini-3-pro-image-preview';
-export const TAIHAO_GEMINI_FLASH_MODEL_LABEL = '泰豪生图 1.1';
+export const TAIHAO_GEMINI_FLASH_MODEL_LABEL = '泰豪生图2';
 export const TAIHAO_GEMINI_FLASH_MODEL_ID = 'gemini-3.1-flash-image-preview';
-const LEGACY_TAIHAO_MODEL_LABEL = '泰豪生图1.0';
-const LEGACY_TAIHAO_FLASH_LABEL = '泰豪生图1.0-flash';
-const LEGACY_TAIHAO_GEMINI_FLASH_LABEL = '泰豪生图1.1';
 
 export function hasGeminiApiKeyConfigured() {
   return Boolean((import.meta.env.VITE_GOOGLE_API_KEY || '').trim());
@@ -22,11 +19,7 @@ export function isTaihaoProModel(model: string) {
 
 export function isTaihaoGeminiFlashModel(model: string) {
   const trimmed = (model ?? '').trim();
-  return (
-    trimmed === TAIHAO_GEMINI_FLASH_MODEL_LABEL ||
-    trimmed === TAIHAO_GEMINI_FLASH_MODEL_ID ||
-    trimmed === LEGACY_TAIHAO_GEMINI_FLASH_LABEL
-  );
+  return trimmed === TAIHAO_GEMINI_FLASH_MODEL_LABEL || trimmed === TAIHAO_GEMINI_FLASH_MODEL_ID;
 }
 
 export function isTaihaoGeminiModel(model: string) {
@@ -35,12 +28,7 @@ export function isTaihaoGeminiModel(model: string) {
 
 export function isTaihaoFlashModel(model: string) {
   const trimmed = (model ?? '').trim();
-  return (
-    trimmed === TAIHAO_FLASH_MODEL_LABEL ||
-    trimmed === TAIHAO_FLASH_MODEL_ID ||
-    trimmed === LEGACY_TAIHAO_MODEL_LABEL ||
-    trimmed === LEGACY_TAIHAO_FLASH_LABEL
-  );
+  return trimmed === TAIHAO_FLASH_MODEL_LABEL || trimmed === TAIHAO_FLASH_MODEL_ID;
 }
 
 export function isTaihaoModel(model: string) {
