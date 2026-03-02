@@ -366,7 +366,7 @@ export function FeatureTags({ variant: _variant = 'default' }: { variant?: 'defa
 
       {/* Bottom Tags Row */}
       {!hasGeminiApiKey && (
-        <div className="text-xs text-amber-300/80 px-1">泰豪生图1.0-pro 已禁用：请配置 `VITE_GOOGLE_API_KEY`</div>
+        <div className="text-xs text-amber-300/80 px-1">泰豪生图模型已禁用：请配置 `VITE_GOOGLE_API_KEY`</div>
       )}
     </motion.div>
   );

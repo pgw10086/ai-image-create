@@ -5,8 +5,11 @@ export const TAIHAO_FLASH_MODEL_LABEL = '泰豪生图1.0';
 export const TAIHAO_FLASH_MODEL_ID = 'doubao-seedream-4-5-251128';
 export const TAIHAO_PRO_MODEL_LABEL = '泰豪生图1.0-pro';
 export const TAIHAO_PRO_MODEL_ID = 'gemini-3-pro-image-preview';
+export const TAIHAO_GEMINI_FLASH_MODEL_LABEL = '泰豪生图 1.1';
+export const TAIHAO_GEMINI_FLASH_MODEL_ID = 'gemini-3.1-flash-image-preview';
 const LEGACY_TAIHAO_MODEL_LABEL = '泰豪生图1.0';
 const LEGACY_TAIHAO_FLASH_LABEL = '泰豪生图1.0-flash';
+const LEGACY_TAIHAO_GEMINI_FLASH_LABEL = '泰豪生图1.1';
 
 export function hasGeminiApiKeyConfigured() {
   return Boolean((import.meta.env.VITE_GOOGLE_API_KEY || '').trim());
@@ -15,6 +18,19 @@ export function hasGeminiApiKeyConfigured() {
 export function isTaihaoProModel(model: string) {
   const trimmed = (model ?? '').trim();
   return trimmed === TAIHAO_PRO_MODEL_LABEL || trimmed === TAIHAO_PRO_MODEL_ID;
+}
+
+export function isTaihaoGeminiFlashModel(model: string) {
+  const trimmed = (model ?? '').trim();
+  return (
+    trimmed === TAIHAO_GEMINI_FLASH_MODEL_LABEL ||
+    trimmed === TAIHAO_GEMINI_FLASH_MODEL_ID ||
+    trimmed === LEGACY_TAIHAO_GEMINI_FLASH_LABEL
+  );
+}
+
+export function isTaihaoGeminiModel(model: string) {
+  return isTaihaoProModel(model) || isTaihaoGeminiFlashModel(model);
 }
 
 export function isTaihaoFlashModel(model: string) {
@@ -28,11 +44,11 @@ export function isTaihaoFlashModel(model: string) {
 }
 
 export function isTaihaoModel(model: string) {
-  return isTaihaoProModel(model) || isTaihaoFlashModel(model);
+  return isTaihaoGeminiModel(model) || isTaihaoFlashModel(model);
 }
 
 export function isModelAvailable(model: string) {
-  if (isTaihaoProModel(model)) return hasGeminiApiKeyConfigured();
+  if (isTaihaoGeminiModel(model)) return hasGeminiApiKeyConfigured();
   return true;
 }
 
@@ -44,6 +60,7 @@ export type ModelOption = {
 };
 
 export const MODEL_OPTIONS: ModelOption[] = [
+  { id: TAIHAO_GEMINI_FLASH_MODEL_ID, label: TAIHAO_GEMINI_FLASH_MODEL_LABEL, supportsGroupGeneration: true },
   { id: TAIHAO_PRO_MODEL_ID, label: TAIHAO_PRO_MODEL_LABEL, supportsGroupGeneration: true },
   { id: TAIHAO_FLASH_MODEL_ID, label: TAIHAO_FLASH_MODEL_LABEL, supportsGroupGeneration: true },
 ];
@@ -206,22 +223,23 @@ export function resolveModelId(model: string) {
   const opt = MODEL_OPTIONS.find((m) => m.id === trimmed || m.label === trimmed);
   if (opt) return opt.id;
   if (isTaihaoProModel(trimmed)) return TAIHAO_PRO_MODEL_ID;
+  if (isTaihaoGeminiFlashModel(trimmed)) return TAIHAO_GEMINI_FLASH_MODEL_ID;
   if (isTaihaoFlashModel(trimmed)) return TAIHAO_FLASH_MODEL_ID;
   return getDefaultModelId();
 }
 
 export function modelSupportsGroupGeneration(modelId: string) {
-  if (isTaihaoProModel(modelId)) return true;
+  if (isTaihaoGeminiModel(modelId)) return true;
   if (isTaihaoFlashModel(modelId)) return true;
   if (isTaihaoModel(modelId)) return true;
   const opt = MODEL_OPTIONS.find((m) => m.id === modelId);
   if (opt) return opt.supportsGroupGeneration;
   const m = (modelId ?? '').toLowerCase();
-  return m.includes('seedream-4-5') || m.includes('gemini-3-pro-image-preview');
+  return m.includes('seedream-4-5') || m.includes('gemini-3-pro-image-preview') || m.includes('gemini-3.1-flash-image-preview');
 }
 
 export function modelSupportsResolutionToken(modelId: string, token: '1K' | '2K' | '4K') {
-  if (isTaihaoProModel(modelId)) return true;
+  if (isTaihaoGeminiModel(modelId)) return true;
   if (isTaihaoFlashModel(modelId)) return token !== '1K';
   const m = (modelId ?? '').toLowerCase();
   if (token === '1K') return m.includes('seedream-4.0');
@@ -375,7 +393,7 @@ export function resolveSizeFromRatioMode(params: { ratioMode?: string; qualityMo
   const qualityMode: '2K' | '4K' = params.qualityMode === '4K' ? '4K' : '2K';
 
   const modelId = (params.modelId ?? '').trim();
-  const isGemini = modelId.includes('gemini-3-pro-image-preview');
+  const isGemini = isTaihaoGeminiModel(modelId);
   const is45 = modelId.includes('4.5') || modelId.includes('4-5');
   const is40 = modelId.includes('4.0');
   const is30 = modelId.includes('3.0-t2i');

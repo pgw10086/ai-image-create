@@ -11,7 +11,7 @@ import { TemplateSelector } from './TemplateSelector';
 import {
   buildPromptWithContext,
   hasGeminiApiKeyConfigured,
-  isTaihaoProModel,
+  isTaihaoGeminiModel,
   MODEL_OPTIONS, resolveModelId,
   resolveSizeFromRatioMode, STYLE_PRESETS,
 } from '@/lib/generationContext';
@@ -621,8 +621,8 @@ export function SuiteGeneratorView() {
 
     try {
       const modelId = resolveModelId(generationContext.model);
-      if (isTaihaoProModel(modelId) && !hasGeminiApiKeyConfigured()) {
-        toast.error('未配置 VITE_GOOGLE_API_KEY，无法使用泰豪生图1.0-pro');
+      if (isTaihaoGeminiModel(modelId) && !hasGeminiApiKeyConfigured()) {
+        toast.error('未配置 VITE_GOOGLE_API_KEY，无法使用 泰豪生图模型');
         return;
       }
       const baseReferenceImages = uploadedImages.map((img) => img.url);
@@ -681,8 +681,8 @@ export function SuiteGeneratorView() {
     setActiveSuiteTaskId(taskId);
 
     const modelId = resolveModelId(generationContext.model);
-    if (isTaihaoProModel(modelId) && !hasGeminiApiKeyConfigured()) {
-      toast.error('未配置 VITE_GOOGLE_API_KEY，无法使用泰豪生图1.0-pro');
+    if (isTaihaoGeminiModel(modelId) && !hasGeminiApiKeyConfigured()) {
+      toast.error('未配置 VITE_GOOGLE_API_KEY，无法使用 泰豪生图模型');
       return;
     }
     const globalPrompt = baseGlobal;

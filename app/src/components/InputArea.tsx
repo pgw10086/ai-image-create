@@ -13,7 +13,7 @@ import { generateImage, parseTemplateVariablesFromImage } from '@/lib/api';
 import {
   computeGroupGeneration,
   hasGeminiApiKeyConfigured,
-  isTaihaoProModel,
+  isTaihaoGeminiModel,
   resolveModelId,
   resolveSizeFromRatioMode,
 } from '@/lib/generationContext';
@@ -481,8 +481,8 @@ export function InputArea() {
     }
 
     const modelId = resolveModelId(generationContext.model);
-    if (isTaihaoProModel(modelId) && !hasGeminiApiKeyConfigured()) {
-      toast.error('未配置 VITE_GOOGLE_API_KEY，无法使用泰豪生图1.0-pro');
+    if (isTaihaoGeminiModel(modelId) && !hasGeminiApiKeyConfigured()) {
+      toast.error('未配置 VITE_GOOGLE_API_KEY，无法使用 泰豪生图模型');
       return;
     }
     const ratioModeRaw = (generationContext.ratioMode ?? '').trim();

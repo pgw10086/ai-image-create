@@ -8,7 +8,7 @@ import { APIErrorCodes } from '../types/api';
 import type { ProductTemplateIntentV1, SmartLayoutCopyVariables } from '../types/smartLayout';
 import { normalizeImageSize } from './utils';
 import { createMockImageDataUri } from './mockImage';
-import { TAIHAO_PRO_MODEL_ID, isTaihaoProModel } from './generationContext';
+import { TAIHAO_PRO_MODEL_ID, isTaihaoGeminiModel } from './generationContext';
 
 const VOLC_API_KEY = import.meta.env.VITE_VOLC_API_KEY || '';
 const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY || '';
@@ -37,7 +37,7 @@ function getGeminiClient() {
 
 function isGeminiModel(model: string) {
   const normalized = (model ?? '').trim();
-  return normalized.includes('gemini-3-pro-image-preview') || normalized === '泰豪生图1.0-pro' || isTaihaoProModel(normalized);
+  return isTaihaoGeminiModel(normalized);
 }
 
 function mapSizeToAspectRatio(size?: string) {
@@ -331,11 +331,12 @@ async function generateByGemini(params: GenerateImageParams): Promise<GenerateIm
   if (!ai) {
     return {
       code: 'missing_google_api_key',
-      message: '未配置 VITE_GOOGLE_API_KEY，无法调用泰豪生图1.0-pro（Gemini）。',
+      message: '未配置 VITE_GOOGLE_API_KEY，无法调用 泰豪生图模型。',
     };
   }
 
-  const normalizedSize = params.size ? normalizeImageSize(params.size, params.model ?? TAIHAO_PRO_MODEL_ID) : params.size;
+  const geminiModelId = isGeminiModel(params.model ?? '') ? (params.model ?? '').trim() : TAIHAO_PRO_MODEL_ID;
+  const normalizedSize = params.size ? normalizeImageSize(params.size, geminiModelId) : params.size;
   const aspectRatio = isNormalizedSizeToken(normalizedSize) ? undefined : mapSizeToAspectRatio(normalizedSize);
   const imageSize = mapSizeToImageSize(normalizedSize);
   const imageInputs = params.image ? (Array.isArray(params.image) ? params.image : [params.image]) : [];
@@ -358,7 +359,7 @@ async function generateByGemini(params: GenerateImageParams): Promise<GenerateIm
       responseModalities: ['IMAGE'],
     };
     const requestPayload = {
-      model: TAIHAO_PRO_MODEL_ID,
+      model: geminiModelId,
       contents: [{ role: 'user', parts: [...imageParts, { text: params.prompt }] }] as any,
       config: baseConfig,
     } as any;
@@ -485,7 +486,7 @@ export async function generateImage(params: GenerateImageParams): Promise<Genera
   if (isGeminiModel(model)) {
     return generateByGemini({
       ...params,
-      model: TAIHAO_PRO_MODEL_ID,
+      model,
       size: normalizedSize,
       sequential_image_generation: params.sequential_image_generation,
       sequential_image_generation_options: params.sequential_image_generation_options,
