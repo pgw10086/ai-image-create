@@ -90,7 +90,7 @@ export interface LayoutCompositionResult {
 *   **与顶部参数条的映射（必须）**：\n    *   `language='en'`：在 Prompt 中追加约束（如 “in English” 或将所有 Zone 描述输出为英文）。\n    *   `platform='amazon'`：追加平台规则提示（如白底、合规、构图建议）。\n    *   `stylePreset`：追加统一风格后缀（灯光、摄影风格、色调等）。\n    *   `scene`：决定 Prompt 模板骨架（例如详情图更偏“信息清晰、留白用于文案”的构图提示）。\n    *   `ratioMode/size`：需要在 Prompt 中显式写入输出尺寸提示（与 API `size` 双写），避免模型忽略比例要求。\n    以上规则必须以确定性的模板实现，避免依赖模型“猜”。\n*   **Region Prompter 段落（默认开启）**：最终 `combinedPrompt` 必须包含以下结构化片段（顺序固定）：\n    1) `GLOBAL_PROMPT:` 仅描述整体摄影棚、光照、镜头、风格。\n    2) `REGION_PROMPTS:` 每个区域一段，格式示例：\n       `Region 1 [Location: Center-Left (x=180px,y=280px,w=440px,h=500px)] Prompt: ...`\n    3) `DEPTH_TREE:` 描述遮挡顺序与覆盖关系，明确“谁覆盖谁”“禁止漂浮/嵌入”。\n    4) `RULES:` 强规则：不要画任何边框/编号/文字；对象必须在各自区域内；禁止漂浮；禁止嵌入。
 *   **参考图优先（新增，默认开启）**：在 `GLOBAL_PROMPT` 之前增加 `REFERENCE_FIRST_POLICY:` 段落。\n    *   有对应参考图的 Region：外观（材质/配色/纹理/细节/光照）以对应参考图为真值；若文字描述与参考图冲突则忽略冲突描述。\n    *   `图1(layoutSketch)` 仅用于位置/构图，不代表风格。\n    *   `{PROJECT}` 等占位符仅用于语义辅助，不用于覆盖参考图外观。\n    *   对有参考图的 Region：区域 prompt 的 context 后缀不再注入风格类描述（stylePreset 等），避免与参考图冲突。
 *   **图片编号（必须）**：最终 Prompt 必须明确多参考图的编号含义，避免模型混用素材：\n    *   `图1` 固定为 `layoutSketch`（位置/构图参考）。\n    *   `图2..` 为 `referenceImages[]`（Zone 上传素材图），并在对应 Region 行中标注“参考图：图N”。\n    *   预览弹窗应展示参考图缩略图并标注图号，供用户核对。
-*   **坐标体系（必须）**：最终 Prompt 必须输出 `COORDINATE_SYSTEM:` 段落，明确 x/y/z 轴规则（x/y 为像素坐标，z 为 zIndex 深度），并要求模型严格遵循。\n    *   建议同时输出 `AnchorPx`（确定性锚点坐标）与 `Margins/Padding`（对齐/留白策略）以增强可执行性。
+*   **坐标体系（必须）**：最终 Prompt 必须输出 `COORDINATE_SYSTEM:` 段落，明确 x/y/z 轴规则（x/y 为像素坐标，z 为 zIndex 深度），并要求模型严格遵循。\n    *   建议同时输出 `AnchorPx`（确定性锚点坐标）与 `Margins/EdgeSlack`（贴边/留白策略；EdgeSlack 表示“允许的最大边缘留白”，用于鼓励对象尽量铺满 bbox）以增强可执行性。
 
 **3.3 对接生成 API**
 *   在 Canvas 组件工具栏添加“生成”按钮。

@@ -309,7 +309,7 @@ export function composeLayoutPrompt(zones: LayoutZone[], context?: GenerationCon
       };
       const locationHint = getLocationHintFromPx(bboxPx, canvasW, canvasH);
       const anchor = computeAnchorPx(bboxPx, locationHint);
-      const padding = computePaddingPx(bboxPx);
+      const edgeSlack = computePaddingPx(bboxPx);
       const margins = {
         l: bboxPx.x,
         t: bboxPx.y,
@@ -324,10 +324,10 @@ export function composeLayoutPrompt(zones: LayoutZone[], context?: GenerationCon
         z.type === 'background'
           ? `Placement: fill the entire bbox as a continuous background plane. Keep edges clean.`
           : z.type === 'prop'
-            ? `Placement: place prop inside bbox; keep bottom supported (no floating). If applicable, align prop base near bbox bottom (y=${bboxPx.y + bboxPx.h - padding}px).`
-            : `Placement: place main subject centered around AnchorPx; avoid crossing bbox edges.`;
+            ? `Placement: scale prop to fill bbox as much as possible; keep bottom supported (no floating). Prop may touch bbox edges. Align prop base on or very near bbox bottom (y≈${bboxPx.y + bboxPx.h}px).`
+            : `Placement: scale main subject to fill bbox as much as possible; center around AnchorPx. Subject may touch bbox edges and may be cropped by bbox edges to achieve full-frame fill. Minimize empty space inside bbox.`;
 
-      return `Region ${regionNo} [Plane: ${getPlaneEn(z.type)} | Location: ${locationHint} | BBox: (x=${bboxPx.x}px,y=${bboxPx.y}px,w=${bboxPx.w}px,h=${bboxPx.h}px) | AnchorPx: (ax=${anchor.ax}px,ay=${anchor.ay}px) | Padding: >=${padding}px | Margins: (l=${margins.l}px,t=${margins.t}px,r=${margins.r}px,b=${margins.b}px) | Depth: zIndex=${z.zIndex} | color=${sketchColor}] Prompt: ${prompt}. ${alignRules}`;
+      return `Region ${regionNo} [Plane: ${getPlaneEn(z.type)} | Location: ${locationHint} | BBox: (x=${bboxPx.x}px,y=${bboxPx.y}px,w=${bboxPx.w}px,h=${bboxPx.h}px) | AnchorPx: (ax=${anchor.ax}px,ay=${anchor.ay}px) | EdgeSlack: <=${edgeSlack}px | Margins: (l=${margins.l}px,t=${margins.t}px,r=${margins.r}px,b=${margins.b}px) | Depth: zIndex=${z.zIndex} | color=${sketchColor}] Prompt: ${prompt}. ${alignRules}`;
     });
 
   const regionOrder = zones.slice().sort((a, b) => a.zIndex - b.zIndex);
@@ -340,7 +340,7 @@ export function composeLayoutPrompt(zones: LayoutZone[], context?: GenerationCon
   const rules = [
     'Follow COORDINATE_SYSTEM strictly for all placements.',
     allowText ? 'Do not draw borders, boxes, numbers, or labels.' : 'Do not draw borders, boxes, numbers, labels, or any text.',
-    'All objects must stay strictly inside their assigned regions.',
+    'All objects must stay strictly inside their assigned regions; they may touch region edges.',
     'Respect occlusion and depth order; no floating objects.',
     ...buildChecklistLines({ allowText, enableDepthTree: true }),
   ];
@@ -475,7 +475,7 @@ export async function composeLayoutForGeneration(
     const imageNo = regionNoToImageNo.get(r.regionNo);
     const refText = imageNo ? `参考图：图${imageNo}（外观真值）` : '参考图：无';
     const anchor = computeAnchorPx(r.bbox, r.locationHint);
-    const padding = computePaddingPx(r.bbox);
+    const edgeSlack = computePaddingPx(r.bbox);
     const margins = {
       l: r.bbox.x,
       t: r.bbox.y,
@@ -486,10 +486,10 @@ export async function composeLayoutForGeneration(
       r.type === 'background'
         ? `Placement: fill the entire bbox as a continuous background plane. Keep edges clean.`
         : r.type === 'prop'
-          ? `Placement: place prop inside bbox; keep bottom supported (no floating). If applicable, align prop base near bbox bottom (y=${r.bbox.y + r.bbox.h - padding}px).`
-          : `Placement: place main subject centered around AnchorPx; avoid crossing bbox edges.`;
+          ? `Placement: scale prop to fill bbox as much as possible; keep bottom supported (no floating). Prop may touch bbox edges. Align prop base on or very near bbox bottom (y≈${r.bbox.y + r.bbox.h}px).`
+          : `Placement: scale main subject to fill bbox as much as possible; center around AnchorPx. Subject may touch bbox edges and may be cropped by bbox edges to achieve full-frame fill. Minimize empty space inside bbox.`;
 
-    return `Region ${r.regionNo} [Plane: ${getPlaneEn(r.type)} | Location: ${r.locationHint} | BBox: (x=${r.bbox.x}px,y=${r.bbox.y}px,w=${r.bbox.w}px,h=${r.bbox.h}px) | AnchorPx: (ax=${anchor.ax}px,ay=${anchor.ay}px) | Padding: >=${padding}px | Margins: (l=${margins.l}px,t=${margins.t}px,r=${margins.r}px,b=${margins.b}px) | Depth: zIndex=${r.zIndex} | 图1中${colorZh}${getTypeZh(r.type)}区域 | ${refText} | color=${sketchColor}] Prompt: ${r.prompt}。${alignRules}`;
+    return `Region ${r.regionNo} [Plane: ${getPlaneEn(r.type)} | Location: ${r.locationHint} | BBox: (x=${r.bbox.x}px,y=${r.bbox.y}px,w=${r.bbox.w}px,h=${r.bbox.h}px) | AnchorPx: (ax=${anchor.ax}px,ay=${anchor.ay}px) | EdgeSlack: <=${edgeSlack}px | Margins: (l=${margins.l}px,t=${margins.t}px,r=${margins.r}px,b=${margins.b}px) | Depth: zIndex=${r.zIndex} | 图1中${colorZh}${getTypeZh(r.type)}区域 | ${refText} | color=${sketchColor}] Prompt: ${r.prompt}。${alignRules}`;
   });
 
   const referenceBoundLines = regionPrompts
@@ -540,7 +540,7 @@ export async function composeLayoutForGeneration(
     ...[
       'Follow COORDINATE_SYSTEM strictly for all placements.',
       allowText ? 'Do not draw borders, boxes, numbers, or labels.' : 'Do not draw borders, boxes, numbers, labels, or any text.',
-      'All objects must stay strictly inside their assigned regions.',
+      'All objects must stay strictly inside their assigned regions; they may touch region edges.',
       ...(enableDepthTree ? ['Respect occlusion and depth order; no floating objects.'] : ['No floating objects.']),
       ...buildChecklistLines({ allowText, enableDepthTree }),
     ],

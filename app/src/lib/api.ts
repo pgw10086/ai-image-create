@@ -20,6 +20,7 @@ const GENERATION_TIMEOUT_GEMINI_BONUS_MS = 30000;
 const GENERATION_TIMEOUT_MAX_MS = 300000;
 // Multimodal recognition model for template parsing.
 const GEMINI_VISION_MODEL_ID = 'gemini-3-flash-preview';
+const SMART_LAYOUT_TEMPLATE_PARSE_MODEL_ID = 'gemini-3.1-pro-preview';
 
 type ImageInlineData = {
   data: string;
@@ -1040,33 +1041,56 @@ export async function parseSmartLayoutTemplateFromImage(input: {
   ].join('\n');
 
   const inlineData = await toInlineData(input.image, input.signal);
-  const requestPayload = {
-    model: GEMINI_VISION_MODEL_ID,
-    contents: [
-      {
-        role: 'user',
-        parts: [
-          { inlineData },
-          {
-            text: system,
-          },
-          {
-            text: `outputLanguage=${input.outputLanguage || 'auto'}`,
-          },
-          {
-            text: `productHint=${(input.productHint || '').trim()}`,
-          },
-        ],
+  const makeRequestPayload = (model: string) =>
+    ({
+      model,
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { inlineData },
+            {
+              text: system,
+            },
+            {
+              text: `outputLanguage=${input.outputLanguage || 'auto'}`,
+            },
+            {
+              text: `productHint=${(input.productHint || '').trim()}`,
+            },
+          ],
+        },
+      ] as any,
+      config: {
+        responseModalities: ['TEXT'],
+        temperature: 0.2,
       },
-    ] as any,
-    config: {
-      responseModalities: ['TEXT'],
-      temperature: 0.2,
-    },
-  } as any;
+    }) as any;
 
-  const timeoutMs = Math.min(120000, resolveGenerationTimeoutMs({ model: GEMINI_VISION_MODEL_ID } as any));
-  const response: any = await withTimeoutAndAbort(ai.models.generateContent(requestPayload), input.signal, timeoutMs);
+  const timeoutMs = Math.min(120000, resolveGenerationTimeoutMs({ model: SMART_LAYOUT_TEMPLATE_PARSE_MODEL_ID } as any));
+  let response: any;
+  try {
+    response = await withTimeoutAndAbort(
+      ai.models.generateContent(makeRequestPayload(SMART_LAYOUT_TEMPLATE_PARSE_MODEL_ID)),
+      input.signal,
+      timeoutMs
+    );
+  } catch (error: any) {
+    const status = error?.status || error?.response?.status;
+    const message = (error?.message || '').toString().toLowerCase();
+    const maybeModelMismatch =
+      status === 400 ||
+      status === 404 ||
+      message.includes('model') ||
+      message.includes('not found') ||
+      message.includes('unknown');
+    if (!maybeModelMismatch) throw error;
+    response = await withTimeoutAndAbort(
+      ai.models.generateContent(makeRequestPayload(GEMINI_VISION_MODEL_ID)),
+      input.signal,
+      Math.min(120000, resolveGenerationTimeoutMs({ model: GEMINI_VISION_MODEL_ID } as any))
+    );
+  }
 
   const textFallback =
     (typeof response?.text === 'string' ? response.text : '') ||
