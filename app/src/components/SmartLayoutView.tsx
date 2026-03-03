@@ -60,11 +60,14 @@ import {
   deleteSmartLayoutTemplate,
   downloadJsonFile,
   importSmartLayoutTemplatesFromJson,
-    loadSmartLayoutHistory,
+  loadSmartLayoutHistory,
+  loadSmartLayoutHistoryFromIndexedDb,
   loadSmartLayoutTemplates,
   loadSmartLayoutDraft,
+  migrateSmartLayoutHistoryToIndexedDb,
   saveSmartLayoutDraft,
-    saveSmartLayoutHistory,
+  saveSmartLayoutHistoryToIndexedDb,
+  SMART_LAYOUT_HISTORY_RETENTION_LIMIT,
   clearSmartLayoutDraft,
   upsertSmartLayoutTemplate,
 } from '@/lib/smartLayoutPersistence';
@@ -181,6 +184,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
   const abortControllerRef = useRef<AbortController | null>(null);
   const currentRunIdRef = useRef<string | null>(null);
   const historySaveFailedRef = useRef(false);
+  const historySaveSeqRef = useRef(0);
 
   useEffect(() => {
     const sanitized = resultHistory.map((entry) => ({
@@ -190,19 +194,36 @@ export function SmartLayoutView({ className }: { className?: string }) {
       slots: entry.slots.map((slot) => ({
         status: slot.status,
         url: slot.url,
-        draftUrl: slot.draftUrl,
+        draftUrl: undefined,
         phase: slot.phase,
         error: slot.error,
       })),
     })) as SmartLayoutHistoryRecord[];
-    const ok = saveSmartLayoutHistory(sanitized);
-    if (ok === false && !historySaveFailedRef.current) {
-      historySaveFailedRef.current = true;
-      toast.error('本地存储空间不足，历史记录未能保存（可尝试清理旧记录或减少生成张数）');
-      return;
-    }
-    if (ok) historySaveFailedRef.current = false;
+    const seq = ++historySaveSeqRef.current;
+    void (async () => {
+      const ok = await saveSmartLayoutHistoryToIndexedDb(sanitized, SMART_LAYOUT_HISTORY_RETENTION_LIMIT);
+      if (seq !== historySaveSeqRef.current) return;
+      if (ok === false && !historySaveFailedRef.current) {
+        historySaveFailedRef.current = true;
+        toast.error('本地存储空间不足，历史记录未能保存（可尝试清理旧记录或减少生成张数）');
+        return;
+      }
+      if (ok) historySaveFailedRef.current = false;
+    })();
   }, [resultHistory]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      await migrateSmartLayoutHistoryToIndexedDb(SMART_LAYOUT_HISTORY_RETENTION_LIMIT);
+      const next = await loadSmartLayoutHistoryFromIndexedDb(SMART_LAYOUT_HISTORY_RETENTION_LIMIT);
+      if (cancelled) return;
+      setResultHistory(next as unknown as ResultHistoryEntry[]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (resultSlots.length > 0) return;
@@ -942,7 +963,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
             slots: resultSlots,
             requestedImageCount,
           };
-          return [entry, ...prev].slice(0, 20);
+          return [entry, ...prev].slice(0, SMART_LAYOUT_HISTORY_RETENTION_LIMIT);
         });
       }
 
@@ -957,7 +978,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
           slots: initialSlots,
           requestedImageCount: requestedCount,
         };
-        return [entry, ...prev].slice(0, 20);
+        return [entry, ...prev].slice(0, SMART_LAYOUT_HISTORY_RETENTION_LIMIT);
       });
 
       setRequestedImageCount(requestedCount);
@@ -2442,7 +2463,7 @@ export function SmartLayoutView({ className }: { className?: string }) {
        />
 
        <Dialog open={resultOpen} onOpenChange={setResultOpen}>
-         <DialogContent className="sm:max-w-[900px] bg-[#14141a] border-white/10 text-white">
+         <DialogContent className="sm:max-w-[900px] max-h-[90vh] flex flex-col bg-[#14141a] border-white/10 text-white">
            <DialogHeader>
              <DialogTitle>
                <div className="flex items-center gap-2">
@@ -2454,162 +2475,166 @@ export function SmartLayoutView({ className }: { className?: string }) {
                查看智能布局生成的图片结果与历史记录
              </DialogDescription>
            </DialogHeader>
-           {displaySlots.length > 0 ? (
-             <div className="w-full">
-               <div className="w-full flex items-center justify-center">
-                {selectedResult?.url ? (
-                   <img
-                     src={selectedResult.url}
-                     alt="result"
-                     className="max-h-[60vh] w-auto object-contain rounded-md border border-white/10"
-                   />
-                ) : selectedResult?.draftUrl ? (
-                  <div className="relative">
-                    <img
-                      src={selectedResult.draftUrl}
-                      alt="draft"
-                      className="max-h-[60vh] w-auto object-contain rounded-md border border-white/10"
-                    />
-                    <div className="absolute top-2 left-2 px-2 py-1 rounded bg-black/60 text-[11px] text-white/80">
-                      构图草稿
-                    </div>
-                    {selectedResult.status !== 'failed' && selectedResult.status !== 'cancelled' ? (
-                      <div className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded bg-black/60 text-[11px] text-white/80">
-                        <Spinner className="size-3 text-white/70" />
-                        {selectedResult.phase === 'refine' ? '精修中' : '构图中'}
+           <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+             {displaySlots.length > 0 ? (
+               <div className="w-full">
+                 <div className="w-full flex items-center justify-center">
+                  {selectedResult?.url ? (
+                     <img
+                       src={selectedResult.url}
+                       alt="result"
+                       className="max-h-[60vh] max-w-full w-auto object-contain rounded-md border border-white/10"
+                     />
+                  ) : selectedResult?.draftUrl ? (
+                    <div className="relative">
+                      <img
+                        src={selectedResult.draftUrl}
+                        alt="draft"
+                        className="max-h-[60vh] max-w-full w-auto object-contain rounded-md border border-white/10"
+                      />
+                      <div className="absolute top-2 left-2 px-2 py-1 rounded bg-black/60 text-[11px] text-white/80">
+                        构图草稿
                       </div>
-                    ) : null}
-                  </div>
-                 ) : (
-                   <div className="h-[320px] w-full rounded-md border border-white/10 bg-white/5 flex flex-col items-center justify-center gap-2 text-white/70">
-                     {selectedResult?.status === 'failed' ? <XCircle className="h-5 w-5 text-rose-300" /> : <Spinner className="size-5 text-white/60" />}
-                     <div className="text-sm">
-                      {selectedResult?.status === 'failed'
-                        ? '生成失败'
-                        : selectedResult?.status === 'cancelled'
-                          ? '已停止'
-                          : selectedResult?.phase === 'refine'
-                            ? '精修中...'
-                            : selectedResult?.phase === 'draft'
-                              ? '构图中...'
-                              : '生成中...'}
-                     </div>
-                     {selectedResult?.error ? <div className="text-xs text-white/45 max-w-[720px] px-4 text-center break-words">{selectedResult.error}</div> : null}
-                   </div>
-                 )}
-               </div>
-              {selectedResult?.draftUrl && selectedResult?.status === 'failed' && selectedResult?.error ? (
-                <div className="mt-3 text-xs text-white/45 text-center break-words">{selectedResult.error}</div>
-              ) : null}
-              {displaySlots.length > 1 ? (
-                 <div className="mt-4 grid grid-cols-4 sm:grid-cols-6 gap-2">
-                  {displaySlots.map((slot, idx) => (
-                     <button
-                       key={`${slot.url || slot.status}-${idx}`}
-                       type="button"
-                       onClick={() => {
-                         setSelectedResultIndex(idx);
-                       }}
-                       className={[
-                         'aspect-square rounded-md overflow-hidden border bg-white/5 relative',
-                         idx === selectedResultIndex ? 'border-violet-400/70' : 'border-white/10 hover:border-white/30',
-                       ].join(' ')}
-                     >
-                       <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/50 text-[10px] text-white/70">{idx + 1}</div>
-                      {slot.url ? (
-                         <img src={slot.url} alt={`result-${idx + 1}`} className="w-full h-full object-cover" />
-                      ) : slot.draftUrl ? (
-                        <>
-                          <img src={slot.draftUrl} alt={`draft-${idx + 1}`} className="w-full h-full object-cover" />
-                          <div className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/55 text-[10px] text-white/75">
-                            草稿
-                          </div>
-                          {slot.status !== 'failed' && slot.status !== 'cancelled' ? (
-                            <div className="absolute top-1 right-1 px-1.5 py-0.5 rounded bg-black/55 text-[10px] text-white/75">
-                              {slot.phase === 'refine' ? '精修' : '构图'}
-                            </div>
-                          ) : null}
-                        </>
-                       ) : (
-                         <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-white/60">
-                           {slot.status === 'failed' ? <XCircle className="h-5 w-5 text-rose-300" /> : <Spinner className="size-5 text-white/60" />}
-                           <div className="text-[11px]">
-                            {slot.status === 'failed'
-                              ? '失败'
-                              : slot.status === 'cancelled'
-                                ? '已停止'
-                                : slot.phase === 'refine'
-                                  ? '精修中'
-                                  : slot.phase === 'draft'
-                                    ? '构图中'
-                                    : '生成中'}
-                           </div>
-                         </div>
-                       )}
-                     </button>
-                   ))}
-                 </div>
-              ) : null}
-             </div>
-           ) : (
-             <div className="text-white/60 text-sm">暂无结果</div>
-           )}
-          {visibleResultHistory.length > 0 && (
-            <div className="border-t border-white/10 px-4 py-3">
-              <div className="text-xs text-white/60 mb-2">历史记录</div>
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {[{ id: 'current', label: '当前结果', slots: resultSlots }, ...visibleResultHistory.map((entry) => ({
-                  id: entry.id,
-                  label: new Date(entry.createdAt).toLocaleString(),
-                  slots: entry.slots,
-                }))].map((entry) => {
-                  const previewUrl = entry.slots.find((s) => s.url)?.url;
-                  return (
-                    <button
-                      key={entry.id}
-                      type="button"
-                      onClick={() => setActiveResultId(entry.id)}
-                      className={[
-                        'w-24 h-16 rounded-md border overflow-hidden flex-shrink-0 bg-white/5',
-                        activeResultId === entry.id ? 'border-violet-400/70' : 'border-white/10 hover:border-white/30',
-                      ].join(' ')}
-                    >
-                      {previewUrl ? (
-                        <img src={previewUrl} alt={entry.label} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-[10px] text-white/50 px-1 text-center">
-                          暂无成功图
+                      {selectedResult.status !== 'failed' && selectedResult.status !== 'cancelled' ? (
+                        <div className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded bg-black/60 text-[11px] text-white/80">
+                          <Spinner className="size-3 text-white/70" />
+                          {selectedResult.phase === 'refine' ? '精修中' : '构图中'}
                         </div>
-                      )}
-                    </button>
-                  );
-                })}
+                      ) : null}
+                    </div>
+                   ) : (
+                     <div className="h-[320px] w-full rounded-md border border-white/10 bg-white/5 flex flex-col items-center justify-center gap-2 text-white/70">
+                       {selectedResult?.status === 'failed' ? <XCircle className="h-5 w-5 text-rose-300" /> : <Spinner className="size-5 text-white/60" />}
+                       <div className="text-sm">
+                        {selectedResult?.status === 'failed'
+                          ? '生成失败'
+                          : selectedResult?.status === 'cancelled'
+                            ? '已停止'
+                            : selectedResult?.phase === 'refine'
+                              ? '精修中...'
+                              : selectedResult?.phase === 'draft'
+                                ? '构图中...'
+                                : '生成中...'}
+                       </div>
+                       {selectedResult?.error ? <div className="text-xs text-white/45 max-w-[720px] px-4 text-center break-words">{selectedResult.error}</div> : null}
+                     </div>
+                   )}
+                 </div>
+                {selectedResult?.draftUrl && selectedResult?.status === 'failed' && selectedResult?.error ? (
+                  <div className="mt-3 text-xs text-white/45 text-center break-words">{selectedResult.error}</div>
+                ) : null}
+                {displaySlots.length > 1 ? (
+                   <div className="mt-4 grid grid-cols-4 sm:grid-cols-6 gap-2">
+                    {displaySlots.map((slot, idx) => (
+                       <button
+                         key={`${slot.url || slot.status}-${idx}`}
+                         type="button"
+                         onClick={() => {
+                           setSelectedResultIndex(idx);
+                         }}
+                         className={[
+                           'aspect-square rounded-md overflow-hidden border bg-white/5 relative',
+                           idx === selectedResultIndex ? 'border-violet-400/70' : 'border-white/10 hover:border-white/30',
+                         ].join(' ')}
+                       >
+                         <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/50 text-[10px] text-white/70">{idx + 1}</div>
+                        {slot.url ? (
+                           <img src={slot.url} alt={`result-${idx + 1}`} className="w-full h-full object-cover" />
+                        ) : slot.draftUrl ? (
+                          <>
+                            <img src={slot.draftUrl} alt={`draft-${idx + 1}`} className="w-full h-full object-cover" />
+                            <div className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/55 text-[10px] text-white/75">
+                              草稿
+                            </div>
+                            {slot.status !== 'failed' && slot.status !== 'cancelled' ? (
+                              <div className="absolute top-1 right-1 px-1.5 py-0.5 rounded bg-black/55 text-[10px] text-white/75">
+                                {slot.phase === 'refine' ? '精修' : '构图'}
+                              </div>
+                            ) : null}
+                          </>
+                         ) : (
+                           <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-white/60">
+                             {slot.status === 'failed' ? <XCircle className="h-5 w-5 text-rose-300" /> : <Spinner className="size-5 text-white/60" />}
+                             <div className="text-[11px]">
+                              {slot.status === 'failed'
+                                ? '失败'
+                                : slot.status === 'cancelled'
+                                  ? '已停止'
+                                  : slot.phase === 'refine'
+                                    ? '精修中'
+                                    : slot.phase === 'draft'
+                                      ? '构图中'
+                                      : '生成中'}
+                             </div>
+                           </div>
+                         )}
+                       </button>
+                     ))}
+                   </div>
+                ) : null}
+               </div>
+             ) : (
+               <div className="text-white/60 text-sm">暂无结果</div>
+             )}
+            {visibleResultHistory.length > 0 && (
+              <div className="border-t border-white/10 px-4 py-3">
+                <div className="text-xs text-white/60 mb-2">历史记录</div>
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {[{ id: 'current', label: '当前结果', slots: resultSlots }, ...visibleResultHistory.map((entry) => ({
+                    id: entry.id,
+                    label: new Date(entry.createdAt).toLocaleString(),
+                    slots: entry.slots,
+                  }))].map((entry) => {
+                    const previewUrl = entry.slots.find((s) => s.url)?.url;
+                    return (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        onClick={() => setActiveResultId(entry.id)}
+                        className={[
+                          'w-24 h-16 rounded-md border overflow-hidden flex-shrink-0 bg-white/5',
+                          activeResultId === entry.id ? 'border-violet-400/70' : 'border-white/10 hover:border-white/30',
+                        ].join(' ')}
+                      >
+                        {previewUrl ? (
+                          <img src={previewUrl} alt={entry.label} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-[10px] text-white/50 px-1 text-center">
+                            暂无成功图
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+           </div>
          </DialogContent>
        </Dialog>
 
        <Dialog open={variantOpen} onOpenChange={setVariantOpen}>
-         <DialogContent className="sm:max-w-[1100px] bg-[#14141a] border-white/10 text-white">
+         <DialogContent className="sm:max-w-[1100px] max-h-[90vh] flex flex-col bg-[#14141a] border-white/10 text-white">
           <DialogHeader>
             <DialogTitle>风格变体结果</DialogTitle>
             <DialogDescription className="sr-only">查看智能布局的风格变体结果</DialogDescription>
           </DialogHeader>
-           {variantResults.length > 0 ? (
-             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-               {variantResults.map((r, idx) => (
-                 <div key={`${r.url}-${idx}`} className="rounded-lg border border-white/10 bg-white/5 p-3">
-                   <div className="text-xs text-white/70 truncate">{r.style || `变体 ${idx + 1}`}</div>
-                   <div className="mt-2 w-full flex items-center justify-center">
-                     <img src={r.url} alt={r.style || `variant-${idx + 1}`} className="max-h-[55vh] w-auto object-contain rounded-md border border-white/10" />
+           <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+             {variantResults.length > 0 ? (
+               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                 {variantResults.map((r, idx) => (
+                   <div key={`${r.url}-${idx}`} className="rounded-lg border border-white/10 bg-white/5 p-3">
+                     <div className="text-xs text-white/70 truncate">{r.style || `变体 ${idx + 1}`}</div>
+                     <div className="mt-2 w-full flex items-center justify-center">
+                       <img src={r.url} alt={r.style || `variant-${idx + 1}`} className="max-h-[55vh] max-w-full w-auto object-contain rounded-md border border-white/10" />
+                     </div>
                    </div>
-                 </div>
-               ))}
-             </div>
-           ) : (
-             <div className="text-white/60 text-sm">暂无结果</div>
-           )}
+                 ))}
+               </div>
+             ) : (
+               <div className="text-white/60 text-sm">暂无结果</div>
+             )}
+           </div>
          </DialogContent>
        </Dialog>
 

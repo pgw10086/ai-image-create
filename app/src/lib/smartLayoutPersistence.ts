@@ -5,6 +5,11 @@ const TEMPLATES_KEY = 'smart_layout_templates_v1';
 const DRAFT_KEY = 'smart_layout_draft_v1';
 const DEFAULT_TEMPLATES_IMPORTED_KEY = 'smart_layout_default_templates_imported_v1';
 const HISTORY_KEY = 'smart_layout_history_v1';
+const HISTORY_DB_NAME = 'smart_layout_history_db_v1';
+const HISTORY_DB_VERSION = 1;
+const HISTORY_STORE = 'history';
+
+export const SMART_LAYOUT_HISTORY_RETENTION_LIMIT = 50;
 
 export type SmartLayoutHistoryRecord = {
   id: string;
@@ -58,6 +63,37 @@ function stableStringify(value: unknown): string {
     return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(',')}}`;
   }
   return JSON.stringify(value);
+}
+
+function waitTransaction(tx: IDBTransaction) {
+  return new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+function openHistoryDb() {
+  if (typeof window === 'undefined') return Promise.resolve(null as IDBDatabase | null);
+  if (!('indexedDB' in window)) return Promise.resolve(null as IDBDatabase | null);
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    const request = window.indexedDB.open(HISTORY_DB_NAME, HISTORY_DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (db.objectStoreNames.contains(HISTORY_STORE)) return;
+      const store = db.createObjectStore(HISTORY_STORE, { keyPath: 'id' });
+      store.createIndex('createdAt', 'createdAt');
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function stripHistoryDraftUrls(next: SmartLayoutHistoryRecord[]): SmartLayoutHistoryRecord[] {
+  return next.map((entry) => ({
+    ...entry,
+    slots: entry.slots.map((slot) => ({ ...slot, draftUrl: undefined })),
+  }));
 }
 
 export function loadSmartLayoutTemplates(): SmartLayoutTemplateV1[] {
@@ -167,7 +203,7 @@ export function clearSmartLayoutDraft() {
   }
 }
 
-export function loadSmartLayoutHistory(): SmartLayoutHistoryRecord[] {
+export function loadSmartLayoutHistory(limit = SMART_LAYOUT_HISTORY_RETENTION_LIMIT): SmartLayoutHistoryRecord[] {
   if (typeof window === 'undefined') return [];
   const parsed = safeParseJson<unknown>(window.localStorage.getItem(HISTORY_KEY));
   if (!Array.isArray(parsed)) return [];
@@ -218,17 +254,154 @@ export function loadSmartLayoutHistory(): SmartLayoutHistoryRecord[] {
         slots: normalizedSlots,
       };
     })
-    .slice(0, 20);
+    .slice(0, limit);
 }
 
-export function saveSmartLayoutHistory(next: SmartLayoutHistoryRecord[]) {
+export function saveSmartLayoutHistory(next: SmartLayoutHistoryRecord[], limit = SMART_LAYOUT_HISTORY_RETENTION_LIMIT) {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(HISTORY_KEY, safeStringifyJson(next.slice(0, 20)));
+    window.localStorage.setItem(HISTORY_KEY, safeStringifyJson(next.slice(0, limit)));
   } catch {
     return false;
   }
   return true;
+}
+
+export async function loadSmartLayoutHistoryFromIndexedDb(limit = SMART_LAYOUT_HISTORY_RETENTION_LIMIT): Promise<SmartLayoutHistoryRecord[]> {
+  const db = await openHistoryDb();
+  if (!db) return loadSmartLayoutHistory(limit);
+
+  try {
+    const tx = db.transaction(HISTORY_STORE, 'readonly');
+    const store = tx.objectStore(HISTORY_STORE);
+    const index = store.index('createdAt');
+    const results: SmartLayoutHistoryRecord[] = [];
+    await new Promise<void>((resolve, reject) => {
+      const request = index.openCursor(null, 'prev');
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor || results.length >= limit) {
+          resolve();
+          return;
+        }
+        const value = cursor.value as unknown;
+        if (isRecord(value)) {
+          const id = value.id;
+          const createdAt = value.createdAt;
+          const slots = value.slots;
+          const requestedImageCount = value.requestedImageCount;
+          if (typeof id === 'string' && typeof createdAt === 'number' && Array.isArray(slots) && typeof requestedImageCount === 'number') {
+            const slotList = Array.isArray(slots) ? (slots as unknown[]) : [];
+            const normalizedSlots: SmartLayoutHistoryRecord['slots'] = [];
+            for (const slot of slotList) {
+              if (!isRecord(slot)) continue;
+              const url = typeof slot.url === 'string' ? slot.url : undefined;
+              const error = typeof slot.error === 'string' ? slot.error : undefined;
+              const phase = isHistoryPhase(slot.phase) ? slot.phase : undefined;
+              const status = isHistoryStatus(slot.status) ? slot.status : undefined;
+              if (url) {
+                normalizedSlots.push({ status: 'success', url, draftUrl: undefined, phase, error });
+                continue;
+              }
+              if (error && status !== 'cancelled') {
+                normalizedSlots.push({ status: 'failed', url, draftUrl: undefined, phase, error });
+                continue;
+              }
+              normalizedSlots.push({
+                status: status ?? 'processing',
+                url,
+                draftUrl: undefined,
+                phase,
+                error,
+              });
+            }
+            results.push({
+              id,
+              createdAt,
+              requestedImageCount,
+              slots: normalizedSlots,
+            });
+          }
+        }
+        cursor.continue();
+      };
+      request.onerror = () => reject(request.error);
+    });
+    await waitTransaction(tx);
+    return results;
+  } finally {
+    db.close();
+  }
+}
+
+export async function saveSmartLayoutHistoryToIndexedDb(next: SmartLayoutHistoryRecord[], limit = SMART_LAYOUT_HISTORY_RETENTION_LIMIT) {
+  const db = await openHistoryDb();
+  if (!db) return saveSmartLayoutHistory(next, limit);
+
+  try {
+    const sanitized = stripHistoryDraftUrls(next).slice(0, limit);
+    const tx = db.transaction(HISTORY_STORE, 'readwrite');
+    const store = tx.objectStore(HISTORY_STORE);
+    for (const entry of sanitized) {
+      store.put(entry);
+    }
+    await new Promise<void>((resolve, reject) => {
+      const index = store.index('createdAt');
+      const request = index.openCursor(null, 'prev');
+      let kept = 0;
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) {
+          resolve();
+          return;
+        }
+        kept += 1;
+        if (kept > limit) {
+          store.delete(cursor.primaryKey);
+        }
+        cursor.continue();
+      };
+      request.onerror = () => reject(request.error);
+    });
+    await waitTransaction(tx);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    db.close();
+  }
+}
+
+export async function migrateSmartLayoutHistoryToIndexedDb(limit = SMART_LAYOUT_HISTORY_RETENTION_LIMIT) {
+  const db = await openHistoryDb();
+  if (!db) return { migrated: 0, usedIndexedDb: false as const };
+
+  try {
+    const tx = db.transaction(HISTORY_STORE, 'readonly');
+    const store = tx.objectStore(HISTORY_STORE);
+    const count = await new Promise<number>((resolve, reject) => {
+      const request = store.count();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await waitTransaction(tx);
+    if (count > 0) return { migrated: 0, usedIndexedDb: true as const };
+
+    const fromLocal = loadSmartLayoutHistory(limit);
+    if (fromLocal.length === 0) return { migrated: 0, usedIndexedDb: true as const };
+    const ok = await saveSmartLayoutHistoryToIndexedDb(fromLocal, limit);
+    if (ok) {
+      try {
+        window.localStorage.removeItem(HISTORY_KEY);
+      } catch {
+        return { migrated: fromLocal.length, usedIndexedDb: true as const };
+      }
+      return { migrated: fromLocal.length, usedIndexedDb: true as const };
+    }
+    return { migrated: 0, usedIndexedDb: true as const };
+  } finally {
+    db.close();
+  }
 }
 
 export function createSmartLayoutTemplateExportPayload(templates: SmartLayoutTemplateV1[]) {
