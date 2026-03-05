@@ -56,7 +56,7 @@ const SUITE_TEMPLATE_VARIABLE_DEFAULTS: Record<string, Record<string, string>> =
 
 const SUITE_TEMPLATE_DEFAULT_GLOBAL_PROMPTS: Record<string, string> = {
   'suite-jewelry-rack-storage': '{STORAGE_CATEGORY_CN}收纳商品摄影，主体为{JEWELRY_PRODUCT}，突出{STORAGE_SELLING_POINTS_CN}与场景适配',
-  'suite-bow-lace-girls': '{BOW_PRODUCT}商品摄影',
+  'suite-bow-lace-girls': '{BOW_PRODUCT}商品摄影，电商详情套图，突出材质细节、尺寸信息与佩戴效果',
 };
 
 function getSuiteTemplateDefaultVariables(templateId?: string) {
