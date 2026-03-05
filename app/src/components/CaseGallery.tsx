@@ -19,21 +19,21 @@ interface TemplateItem {
 const templates: TemplateItem[] = [
   {
     id: 'bow-detail-template',
-    image: '/images/case-bow.jpg',
-    title: '蝴蝶结商品详情图',
+    image: '/images/product-details.jpg',
+    title: '商品详情图',
     description:
-      '梦幻母婴风详情模板，聚焦蝴蝶结缎面高光、工艺细节与场景化展示，适用于亚马逊等跨境电商详情页主图延展。',
-    promptTemplate: `生成一张蝴蝶结商品详情海报，竖版 3:4，产品为粉蓝配色蝴蝶结挂旗。
-整体风格：清新轻奢、少女感但不幼稚，画面干净明亮。
-色彩方案：马卡龙蓝、樱花粉、纯白，保持高级和谐。
+      '通用电商商品详情图模板，强调主体展示、细节特写与信息分区，适用于亚马逊等跨境电商详情页复用。',
+    promptTemplate: `生成一张通用商品详情海报，产品为【你的商品名】。
+整体风格：清晰克制的电商详情风，画面干净明亮。
+色彩方案：以商品主色为核心，辅以中性色，保证信息可读性。
 构图与版式：
-1）顶部预留标题区，采用浅蓝几何/波浪区块，保留留白；
-2）中部以白色法式壁炉为主场景，展示粉蓝蝴蝶结弧线挂旗与真实悬挂效果；
-3）底部放置三个圆形细节特写，分别体现背面结构、燕尾尾部设计、丝缎光泽（手持展示）。
-文案建议：Back View / Swallowtail-tail Design / Soft Silky Luster。
-字体建议：现代衬线或优雅斜体衬线，颜色使用深灰蓝，整体质感偏精品电商海报。
-输出要求：柔和漫射日光，阴影轻，丝缎高光细腻、褶皱自然、边缘整齐，商业级清晰度，禁止 logo、水印、随机文字与杂乱背景。`,
-    tags: ['母婴派对', '详情页模板', '丝带质感'],
+1）顶部预留标题区，保留足够留白用于品牌与主标题；
+2）中部展示商品主体与核心使用场景，突出外观、材质与卖点；
+3）底部放置三个细节特写，分别体现材质工艺、关键结构、使用细节。
+文案建议：Core Feature / Material Detail / Usage Highlight。
+字体建议：现代无衬线或简洁衬线，颜色使用深灰或与商品主色协调的强调色。
+输出要求：商业级清晰度，主体边缘清晰，光影自然，禁止 logo、水印、随机文字与杂乱背景。`,
+    tags: ['通用商品', '详情页模板', '高复用'],
   },
   {
     id: 'hair-organizer-template',
@@ -63,7 +63,7 @@ export function CaseGallery() {
     setSelectedTemplate(null);
     if (template.id === 'bow-detail-template') {
       setInputTemplatePreset('bow-detail');
-      toast.success('已加载蝴蝶结变量模板');
+      toast.success('已加载商品详情图变量模板');
       return;
     }
     if (template.id === 'hair-organizer-template') {

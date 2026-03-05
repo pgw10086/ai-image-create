@@ -67,27 +67,27 @@ type TemplateVariableDef = {
 };
 
 const BOW_TEMPLATE_VARIABLES: TemplateVariableDef[] = [
-  { key: 'productSubject', label: '海报主题词', defaultValue: '蝴蝶结', placeholder: '请输入海报主题词' },
-  { key: 'productName', label: '产品描述', defaultValue: '粉蓝配色蝴蝶结挂旗', placeholder: '请输入产品描述' },
-  { key: 'styleTone', label: '整体风格', defaultValue: '清新轻奢、少女感但不幼稚', placeholder: '请输入整体风格' },
-  { key: 'lightingStyle', label: '摄影光线', defaultValue: '柔和漫射日光', placeholder: '请输入摄影光线' },
-  { key: 'colorPalette', label: '色彩方案', defaultValue: '马卡龙蓝、樱花粉、纯白，保持高级和谐', placeholder: '请输入色彩方案' },
-  { key: 'topBlockStyle', label: '顶部版式', defaultValue: '浅蓝几何/波浪区块并保留留白', placeholder: '请输入顶部版式' },
+  { key: 'productSubject', label: '海报主题词', defaultValue: '商品', placeholder: '请输入海报主题词' },
+  { key: 'productName', label: '产品描述', defaultValue: '核心商品（品类 + 颜色/材质/规格）', placeholder: '请输入产品描述' },
+  { key: 'styleTone', label: '整体风格', defaultValue: '清晰克制的电商详情风', placeholder: '请输入整体风格' },
+  { key: 'lightingStyle', label: '摄影光线', defaultValue: '柔和商业棚拍光，阴影自然', placeholder: '请输入摄影光线' },
+  { key: 'colorPalette', label: '色彩方案', defaultValue: '以商品主色为核心，辅以中性色，保证信息可读性', placeholder: '请输入色彩方案' },
+  { key: 'topBlockStyle', label: '顶部版式', defaultValue: '简洁信息区并保留留白', placeholder: '请输入顶部版式' },
   { key: 'headlineText', label: '标题文案', defaultValue: 'PRODUCT DETAILS', placeholder: '请输入标题文案' },
-  { key: 'sceneSetting', label: '中部场景', defaultValue: '白色法式壁炉场景，粉蓝蝴蝶结弧线挂旗', placeholder: '请输入中部场景' },
-  { key: 'detailOne', label: '细节1', defaultValue: '背面结构', placeholder: '请输入细节1' },
-  { key: 'detailTwo', label: '细节2', defaultValue: '燕尾尾部设计', placeholder: '请输入细节2' },
-  { key: 'detailThree', label: '细节3', defaultValue: '丝缎光泽（手持展示）', placeholder: '请输入细节3' },
-  { key: 'copyOne', label: '英文点位1', defaultValue: 'Back View', placeholder: '请输入英文点位1' },
-  { key: 'copyTwo', label: '英文点位2', defaultValue: 'Swallowtail-tail Design', placeholder: '请输入英文点位2' },
-  { key: 'copyThree', label: '英文点位3', defaultValue: 'Soft Silky Luster', placeholder: '请输入英文点位3' },
-  { key: 'fontStyle', label: '字体建议', defaultValue: '现代衬线或优雅斜体衬线', placeholder: '请输入字体建议' },
-  { key: 'fontColor', label: '文字颜色', defaultValue: '深灰蓝', placeholder: '请输入文字颜色' },
-  { key: 'designMood', label: '质感方向', defaultValue: '精品电商海报', placeholder: '请输入质感方向' },
+  { key: 'sceneSetting', label: '中部场景', defaultValue: '中性商品展示场景，突出主体和核心卖点', placeholder: '请输入中部场景' },
+  { key: 'detailOne', label: '细节1', defaultValue: '材质与工艺细节', placeholder: '请输入细节1' },
+  { key: 'detailTwo', label: '细节2', defaultValue: '关键结构或功能细节', placeholder: '请输入细节2' },
+  { key: 'detailThree', label: '细节3', defaultValue: '使用场景或尺寸细节', placeholder: '请输入细节3' },
+  { key: 'copyOne', label: '英文点位1', defaultValue: 'Core Feature', placeholder: '请输入英文点位1' },
+  { key: 'copyTwo', label: '英文点位2', defaultValue: 'Material Detail', placeholder: '请输入英文点位2' },
+  { key: 'copyThree', label: '英文点位3', defaultValue: 'Usage Highlight', placeholder: '请输入英文点位3' },
+  { key: 'fontStyle', label: '字体建议', defaultValue: '现代无衬线或简洁衬线', placeholder: '请输入字体建议' },
+  { key: 'fontColor', label: '文字颜色', defaultValue: '深灰或与商品主色协调的强调色', placeholder: '请输入文字颜色' },
+  { key: 'designMood', label: '质感方向', defaultValue: '精品电商详情页', placeholder: '请输入质感方向' },
   {
     key: 'outputRequirement',
     label: '输出要求',
-    defaultValue: '商业级清晰度，丝缎高光细腻、褶皱自然、边缘整齐，禁止logo水印与随机文字',
+    defaultValue: '商业级清晰度，主体边缘清晰，光影自然，禁止logo水印与随机文字',
     placeholder: '请输入输出要求',
   },
 ];
@@ -179,12 +179,12 @@ function createParagraph(
 
 function createBowTemplateDocument(variableMap: Record<TemplateVariableKey, TemplateVariableDef>): Descendant[] {
   return [
-    createParagraph(['生成一张', { key: 'productSubject' }, '商品详情海报，竖版 3:4，产品为', { key: 'productName' }, '。'], variableMap),
+    createParagraph(['生成一张', { key: 'productSubject' }, '商品详情海报，产品为', { key: 'productName' }, '。'], variableMap),
     createParagraph(['整体风格：', { key: 'styleTone' }, '，画面干净明亮。'], variableMap),
     createParagraph(['色彩方案：', { key: 'colorPalette' }, '。'], variableMap),
     createParagraph(['构图与版式：'], variableMap),
     createParagraph(['1）顶部使用', { key: 'topBlockStyle' }, '并放置标题“', { key: 'headlineText' }, '”；'], variableMap),
-    createParagraph(['2）中部以', { key: 'sceneSetting' }, '为主场景，展示真实悬挂效果；'], variableMap),
+    createParagraph(['2）中部以', { key: 'sceneSetting' }, '为主场景，突出商品主体与核心卖点；'], variableMap),
     createParagraph([
       '3）底部放置三个圆形细节特写，分别体现',
       { key: 'detailOne' },
@@ -652,7 +652,7 @@ export function InputArea() {
                     setIsFocused(false);
                     syncTemplatePromptToStore();
                   }}
-                  placeholder={inputTemplatePreset === 'hair-organizer' ? '编辑发饰置物架模板描述...' : '编辑蝴蝶结模板描述...'}
+                  placeholder={inputTemplatePreset === 'hair-organizer' ? '编辑发饰置物架模板描述...' : '编辑商品详情图模板描述...'}
                   className="min-h-16 text-white placeholder:text-white/35"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {

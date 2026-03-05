@@ -703,7 +703,7 @@ const VARIABLE_KEYS_BY_PRESET: Record<VariableTemplatePreset, string[]> = {
 
 const VARIABLE_KEY_HINTS_BY_PRESET: Record<VariableTemplatePreset, Record<string, string>> = {
   'bow-detail': {
-    productSubject: '海报主标题中的商品主题词（如：蝴蝶结/发带/头花）',
+    productSubject: '海报主标题中的商品主题词（如：耳机/水杯/收纳盒）',
     productName: '主商品名称与核心外观描述（颜色/材质/款式）',
     styleTone: '视觉风格调性',
     lightingStyle: '光线类型与氛围',
