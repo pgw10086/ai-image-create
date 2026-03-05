@@ -93,27 +93,27 @@ const BOW_TEMPLATE_VARIABLES: TemplateVariableDef[] = [
 ];
 
 const HAIR_ORGANIZER_TEMPLATE_VARIABLES: TemplateVariableDef[] = [
-  { key: 'productName', label: '产品描述', defaultValue: '女孩发饰置物架（墙挂式发夹发带收纳架）', placeholder: '请输入产品描述' },
-  { key: 'styleTone', label: '整体风格', defaultValue: '北欧奶油风、温暖亲子生活方式', placeholder: '请输入整体风格' },
-  { key: 'lightingStyle', label: '摄影光线', defaultValue: '自然柔光摄影', placeholder: '请输入摄影光线' },
-  { key: 'colorPalette', label: '色彩方案', defaultValue: '奶油白、浅木色、马卡龙粉彩发饰点缀', placeholder: '请输入色彩方案' },
-  { key: 'topBlockStyle', label: '左侧信息区', defaultValue: '留出大面积留白用于品牌与标题文案', placeholder: '请输入信息区样式' },
-  { key: 'headlineText', label: '标题文案', defaultValue: 'Hair Accessory Organizer for Girls', placeholder: '请输入标题文案' },
-  { key: 'sceneSetting', label: '中部场景', defaultValue: '墙面挂置发饰收纳架，分层陈列发夹与发带', placeholder: '请输入中部场景' },
-  { key: 'rightScene', label: '右侧场景', defaultValue: '儿童房柜体与小女孩场景，强化产品使用人群与家居适配氛围', placeholder: '请输入右侧场景' },
-  { key: 'detailOne', label: '细节1', defaultValue: '分层收纳结构', placeholder: '请输入细节1' },
-  { key: 'detailTwo', label: '细节2', defaultValue: '夹子与发带整齐陈列', placeholder: '请输入细节2' },
-  { key: 'detailThree', label: '细节3', defaultValue: '儿童房家居融合感', placeholder: '请输入细节3' },
-  { key: 'copyOne', label: '英文点位1', defaultValue: 'Multi-layer Storage', placeholder: '请输入英文点位1' },
-  { key: 'copyTwo', label: '英文点位2', defaultValue: 'Neat & Easy Access', placeholder: '请输入英文点位2' },
-  { key: 'copyThree', label: '英文点位3', defaultValue: 'Kid Room Friendly', placeholder: '请输入英文点位3' },
-  { key: 'fontStyle', label: '字体建议', defaultValue: '圆润无衬线', placeholder: '请输入字体建议' },
-  { key: 'fontColor', label: '文字颜色', defaultValue: '深暖灰', placeholder: '请输入文字颜色' },
-  { key: 'designMood', label: '质感方向', defaultValue: '母婴精品海报', placeholder: '请输入质感方向' },
+  { key: 'productName', label: '产品描述', defaultValue: '核心商品（品类 + 颜色/材质/规格）', placeholder: '请输入产品描述' },
+  { key: 'styleTone', label: '整体风格', defaultValue: '品牌化宣传海报风，视觉聚焦明确', placeholder: '请输入整体风格' },
+  { key: 'lightingStyle', label: '摄影光线', defaultValue: '商业主光 + 轮廓补光，层次清晰', placeholder: '请输入摄影光线' },
+  { key: 'colorPalette', label: '色彩方案', defaultValue: '品牌主色 + 中性色 + 强调色，提升识别度', placeholder: '请输入色彩方案' },
+  { key: 'topBlockStyle', label: '信息区版式', defaultValue: '顶部保留标题与品牌信息区，层级清晰', placeholder: '请输入信息区样式' },
+  { key: 'headlineText', label: '标题文案', defaultValue: 'BRAND PROMO POSTER', placeholder: '请输入标题文案' },
+  { key: 'sceneSetting', label: '中部场景', defaultValue: '中部展示商品主体与英雄镜头，突出核心卖点', placeholder: '请输入中部场景' },
+  { key: 'rightScene', label: '辅助场景', defaultValue: '补充生活方式或使用场景，增强代入感', placeholder: '请输入右侧场景' },
+  { key: 'detailOne', label: '细节1', defaultValue: '核心功能卖点', placeholder: '请输入细节1' },
+  { key: 'detailTwo', label: '细节2', defaultValue: '材质与工艺细节', placeholder: '请输入细节2' },
+  { key: 'detailThree', label: '细节3', defaultValue: '活动信息或购买引导', placeholder: '请输入细节3' },
+  { key: 'copyOne', label: '英文点位1', defaultValue: 'Hero Product', placeholder: '请输入英文点位1' },
+  { key: 'copyTwo', label: '英文点位2', defaultValue: 'Key Benefit', placeholder: '请输入英文点位2' },
+  { key: 'copyThree', label: '英文点位3', defaultValue: 'Limited Offer', placeholder: '请输入英文点位3' },
+  { key: 'fontStyle', label: '字体建议', defaultValue: '现代无衬线，标题加粗，正文清晰易读', placeholder: '请输入字体建议' },
+  { key: 'fontColor', label: '文字颜色', defaultValue: '高对比主文案色 + 强调色', placeholder: '请输入文字颜色' },
+  { key: 'designMood', label: '质感方向', defaultValue: '品牌营销海报', placeholder: '请输入质感方向' },
   {
     key: 'outputRequirement',
     label: '输出要求',
-    defaultValue: '商业级清晰度，材质与光影真实自然，布料细节清晰，禁止logo水印与随机文字',
+    defaultValue: '商业级清晰度，主体边缘清晰，光影自然，禁止logo水印与随机文字',
     placeholder: '请输入输出要求',
   },
 ];
@@ -210,13 +210,13 @@ function createBowTemplateDocument(variableMap: Record<TemplateVariableKey, Temp
 
 function createHairOrganizerTemplateDocument(variableMap: Record<TemplateVariableKey, TemplateVariableDef>): Descendant[] {
   return [
-    createParagraph(['生成一张高转化电商商品详情图，产品为', { key: 'productName' }, '。'], variableMap),
+    createParagraph(['生成一张高转化电商宣传海报图，产品为', { key: 'productName' }, '。'], variableMap),
     createParagraph(['整体风格：', { key: 'styleTone' }, '，画面干净通透。'], variableMap),
     createParagraph(['色彩方案：', { key: 'colorPalette' }, '。'], variableMap),
     createParagraph(['构图与版式：'], variableMap),
-    createParagraph(['1）左侧信息区：', { key: 'topBlockStyle' }, '，标题建议“', { key: 'headlineText' }, '”；'], variableMap),
-    createParagraph(['2）中部展示', { key: 'sceneSetting' }, '；'], variableMap),
-    createParagraph(['3）右侧展示', { key: 'rightScene' }, '。'], variableMap),
+    createParagraph(['1）信息区：', { key: 'topBlockStyle' }, '，标题建议“', { key: 'headlineText' }, '”；'], variableMap),
+    createParagraph(['2）中部重点展示', { key: 'sceneSetting' }, '；'], variableMap),
+    createParagraph(['3）辅助区域补充', { key: 'rightScene' }, '。'], variableMap),
     createParagraph([
       '4）重点突出',
       { key: 'detailOne' },
@@ -652,7 +652,7 @@ export function InputArea() {
                     setIsFocused(false);
                     syncTemplatePromptToStore();
                   }}
-                  placeholder={inputTemplatePreset === 'hair-organizer' ? '编辑发饰置物架模板描述...' : '编辑商品详情图模板描述...'}
+                  placeholder={inputTemplatePreset === 'hair-organizer' ? '编辑宣传海报图模板描述...' : '编辑商品详情图模板描述...'}
                   className="min-h-16 text-white placeholder:text-white/35"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
