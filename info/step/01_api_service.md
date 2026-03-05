@@ -7,11 +7,12 @@
 *   **环境变量**: 仅通过 `import.meta.env` 读取，禁止硬编码或写入仓库
 
 ## 2. 参考文档
-*   API Curl 示例（字段样例）：`c:\codes\ai-product-gen\info\模型curl调用.md`
-*   API 详细字段说明（取值范围/限制）：`c:\codes\ai-product-gen\info\图片生成 API（Seedream 4.0-4.5 API）.md`
+*   API Curl 示例（字段样例）：`info/模型curl调用.md`
+*   API 详细字段说明（取值范围/限制）：`info/图片生成 API（Seedream 4.0-4.5 API）.md`
 
 ## 3. 环境变量约定
 *   `VITE_VOLC_API_KEY`: 火山方舟 API Key（前端仅读取，不允许硬编码到仓库）
+*   `VITE_GOOGLE_API_KEY`: Gemini Key（用于模板图片解析/商品图生成模板/可选的文案能力）
 *   `VITE_USE_MOCK`: 可选，`true/false`，用于演示模式（强制不请求真实接口）
 
 ### 3.1 本地开发配置方式（必须）
@@ -27,48 +28,43 @@
 export interface GenerateImageParams {
   prompt: string;
   image?: string | string[]; // Base64 或 URL；多图参考传数组
-  size?: string; // 例："2K" | "4K" | "2048x2048"
+  size?: string; // e.g. "2K" | "4K" | "2048x2048"
   model?: string; // Model ID 或 Endpoint ID
+  guidance_scale?: number; // 有参考图时可下调，提升“看图生成”权重
   sequential_image_generation?: 'auto' | 'disabled'; // 4.0/4.5 组图能力开关（单图/套图均可用）
   sequential_image_generation_options?: {
     max_images: number;
   };
-  response_format?: 'url' | 'b64_json';
   stream?: boolean;
   watermark?: boolean;
+  signal?: AbortSignal; // 取消/超时
 }
 
 // 图片生成响应（只保留项目用到的字段）
 export interface GenerateImageResponse {
-  model?: string;
-  created?: number;
-  data?: Array<
-    | { url: string; size?: string }
-    | { b64_json: string; size?: string }
-    | { error: { code: string; message: string } }
-  >;
-  usage?: {
-    generated_images: number;
-    output_tokens?: number;
-    total_tokens?: number;
-  };
+  code?: string;
+  message?: string;
+  data?: { url?: string; b64_json?: string; size?: string }[];
+  usage?: { generated_images: number; total_tokens: number };
   error?: { code: string; message: string };
 }
 ```
 
 ## 5. 模块 API 设计 (Module API)
-*   建议导出一个稳定的服务函数：
-    *   `generateImage(params: GenerateImageParams): Promise<GenerateImageResponse>`
-*   该函数只负责：参数映射、鉴权注入、请求发送、错误归一化；不负责 UI Toast/状态管理。
+*   在 `app/src/lib/api.ts` 中导出并保持 API 边界清晰：
+    *   `generateImage(params: GenerateImageParams): Promise<GenerateImageResponse>`：基础生图调用（Seedream/Gemini 兼容）
+    *   `parseSmartLayoutTemplateFromImage(...)`：上传模板图 -> 解析为 zones
+    *   `generateSmartLayoutTemplateFromProductImage(...)`：商品图 + 意图 -> 生成画布 zones
+*   服务函数只负责：参数映射、鉴权注入、请求发送、错误归一化；不负责 UI Toast/状态管理。
 
 ## 6. 任务描述细节 (Detailed Tasks)
 
 **6.1 创建类型定义文件**
-*   在 `src/types/api.ts` 中定义上述接口（或在现有类型文件中按项目约定落位）。
+*   在 `app/src/types/api.ts` 中定义上述接口（或在现有类型文件中按项目约定落位）。
 *   增加一个错误码映射表（将 API 的 `error.code` 映射为更友好的中文提示），例如：鉴权失败、限流、内容安全、内部错误。
 
 **6.2 封装 API 调用函数**
-*   在 `src/lib/api.ts` 中实现 `generateImage`。
+*   在 `app/src/lib/api.ts` 中实现 `generateImage`。
 *   请求地址：`POST https://ark.cn-beijing.volces.com/api/v3/images/generations`（如需可再抽成环境变量）
 *   Header：\n  `Content-Type: application/json`\n  `Authorization: Bearer ${VITE_VOLC_API_KEY}`
 *   默认参数建议：\n  `response_format: 'url'`\n  `stream: false`\n  `watermark: true`\n  `sequential_image_generation: 'disabled'`
@@ -86,5 +82,5 @@ export interface GenerateImageResponse {
 *   **重试策略**：仅对 500 系列错误重试 1 次；对 401/403 不重试。
 
 ## 交付物
-*   `src/types/api.ts`: 完整的 API 类型定义。
-*   `src/lib/api.ts`: 封装好的 API 调用模块。
+*   `app/src/types/api.ts`: 完整的 API 类型定义。
+*   `app/src/lib/api.ts`: 封装好的 API 调用模块。

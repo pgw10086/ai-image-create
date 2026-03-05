@@ -9,12 +9,23 @@
 // 顶部参数条映射后的全局上下文（示例字段，按项目实际精简/扩展）
 export interface GenerationContext {
   scene: 'single' | 'detail' | 'crossborder' | 'brand';
-  platform?: 'amazon' | 'temu' | 'shopee' | 'tiktok' | 'aliexpress' | 'alibaba';
+  platformId?:
+    | 'amazon'
+    | 'temu'
+    | 'shopee'
+    | 'tiktok'
+    | 'aliexpress'
+    | 'alibaba'
+    | 'lazada'
+    | 'ebay'
+    | 'shein';
   language?: 'zh' | 'en';
   model?: string;
   imageCount?: number; // 智能布局支持多图输出；模型不支持组图时前端分次调用补齐
   ratioMode?: 'smart' | 'fixed';
   stylePreset?: string;
+  size?: string; // ratioMode=fixed 时使用
+  allowText?: boolean;
 }
 
 export interface RegionPrompt {
@@ -29,6 +40,7 @@ export interface RegionPrompt {
 }
 
 export interface DepthTreeNode {
+  regionNo: number;
   id: string;
   zIndex: number;
   overlaps: string[]; // ids that this node overlaps/covers
@@ -40,6 +52,8 @@ export interface LayoutCompositionRequest {
   canvasSize: { width: number; height: number }; // 用户手动定义：影响坐标体系与布局草图尺寸
   renderMode: 'collage' | 'segmentation'; // 贴图布局图 | 纯色布局图
   context?: GenerationContext; // 用于 Prompt/size/model 的映射
+  assets?: SmartLayoutAsset[]; // 素材库（用于通过 refImageId 取到 dataUrl）
+  promptSettings?: { enableRegionPrompts?: boolean; enableDepthTree?: boolean };
 }
 
 // Prompt 组装策略
@@ -60,9 +74,9 @@ export interface LayoutCompositionResult {
     size?: string;
     model?: string;
     guidance_scale?: number;
-    sequential_image_generation?: 'auto' | 'disabled';
-    sequential_image_generation_options?: { max_images?: number };
+    sequential_image_generation: 'disabled';
   };
+  size: string;
 }
 ```
 
@@ -87,7 +101,8 @@ export interface LayoutCompositionResult {
     *   提取所有非空 Prompt。
     *   按照 `[背景] -> [环境/道具] -> [主体]` 的语义顺序进行拼接（可以通过 Zone 的 `type` 字段排序）。
     *   示例：“(Background: white studio), (Prop: wooden podium), (Main: red running shoes)”。
-*   **与顶部参数条的映射（必须）**：\n    *   `language='en'`：在 Prompt 中追加约束（如 “in English” 或将所有 Zone 描述输出为英文）。\n    *   `platform='amazon'`：追加平台规则提示（如白底、合规、构图建议）。\n    *   `stylePreset`：追加统一风格后缀（灯光、摄影风格、色调等）。\n    *   `scene`：决定 Prompt 模板骨架（例如详情图更偏“信息清晰、留白用于文案”的构图提示）。\n    *   `ratioMode/size`：需要在 Prompt 中显式写入输出尺寸提示（与 API `size` 双写），避免模型忽略比例要求。\n    以上规则必须以确定性的模板实现，避免依赖模型“猜”。\n*   **Region Prompter 段落（默认开启）**：最终 `combinedPrompt` 必须包含以下结构化片段（顺序固定）：\n    1) `GLOBAL_PROMPT:` 仅描述整体摄影棚、光照、镜头、风格。\n    2) `REGION_PROMPTS:` 每个区域一段，格式示例：\n       `Region 1 [Location: Center-Left (x=180px,y=280px,w=440px,h=500px)] Prompt: ...`\n    3) `DEPTH_TREE:` 描述遮挡顺序与覆盖关系，明确“谁覆盖谁”“禁止漂浮/嵌入”。\n    4) `RULES:` 强规则：不要画任何边框/编号/文字；对象必须在各自区域内；禁止漂浮；禁止嵌入。
+*   **与顶部参数条的映射（必须）**：language/platformId/stylePreset/scene/ratioMode/size/allowText 等需要通过确定性的模板映射到最终提示词（GLOBAL_PROMPT/RULES/各 Region 后缀），避免依赖模型“猜”。
+*   **提示词结构（与当前实现保持一致）**：最终 `combinedPrompt` 以结构化段落输出（顺序固定）：\n    1) `REFERENCE_FIRST_POLICY:`（默认开启）声明“图2.. 为外观真值参考；图1(layoutSketch)仅用于位置/构图；文字与参考图冲突时以参考图为准”。\n    2) `GLOBAL_PROMPT:` 仅描述整体摄影棚/光照/镜头/风格/平台/语言/是否允许文字等。\n    3) `IMAGE_REFERENCES:` 明确图号映射（图1=layoutSketch；图2..=referenceImages[]），并标注每张参考图对应哪些 Region。\n    4) `COORDINATE_SYSTEM:` 坐标系声明（像素 x/y 与 zIndex 深度）。\n    5) `REGION_PROMPTS:`（可开关）每个区域一段，包含 bbox(px)/locationHint/AnchorPx/EdgeSlack<= 等。\n    6) `DEPTH_TREE:`（可开关）遮挡顺序与覆盖关系。\n    7) `RULES:` 强规则（禁止边框/编号；是否允许文字；对象必须在 bbox 内且可贴边；禁止漂浮）。
 *   **参考图优先（新增，默认开启）**：在 `GLOBAL_PROMPT` 之前增加 `REFERENCE_FIRST_POLICY:` 段落。\n    *   有对应参考图的 Region：外观（材质/配色/纹理/细节/光照）以对应参考图为真值；若文字描述与参考图冲突则忽略冲突描述。\n    *   `图1(layoutSketch)` 仅用于位置/构图，不代表风格。\n    *   `{PROJECT}` 等占位符仅用于语义辅助，不用于覆盖参考图外观。\n    *   对有参考图的 Region：区域 prompt 的 context 后缀不再注入风格类描述（stylePreset 等），避免与参考图冲突。
 *   **图片编号（必须）**：最终 Prompt 必须明确多参考图的编号含义，避免模型混用素材：\n    *   `图1` 固定为 `layoutSketch`（位置/构图参考）。\n    *   `图2..` 为 `referenceImages[]`（Zone 上传素材图），并在对应 Region 行中标注“参考图：图N”。\n    *   预览弹窗应展示参考图缩略图并标注图号，供用户核对。
 *   **坐标体系（必须）**：最终 Prompt 必须输出 `COORDINATE_SYSTEM:` 段落，明确 x/y/z 轴规则（x/y 为像素坐标，z 为 zIndex 深度），并要求模型严格遵循。\n    *   建议同时输出 `AnchorPx`（确定性锚点坐标）与 `Margins/EdgeSlack`（贴边/留白策略；EdgeSlack 表示“允许的最大边缘留白”，用于鼓励对象尽量铺满 bbox）以增强可执行性。
@@ -99,18 +114,17 @@ export interface LayoutCompositionResult {
     3.  弹出“预览确认”弹窗（见交互流程补充）。
     4.  确认后，调用 `api.generateImage`（Image-to-Image 模式）。
 
-*   **API 参数要求**：\n    *   `image`: `[layoutSketchBase64, ...referenceImages]`\n    *   `prompt`: `combinedPrompt`\n    *   `sequential_image_generation`: 支持 `auto`（一次返回多张）或 `disabled`（单张）\n    *   `sequential_image_generation_options.max_images`: 当为 `auto` 时传入\n    *   `stream`: `false`\n    *   **取消**：需要支持 AbortSignal 以便用户在生成中点击“停止”中断请求
-\n    *   `guidance_scale`: 当存在 `referenceImages` 时可下调（降低文本支配性，提高“看图生成”的权重）
-\n*   **分次生成并发（必须）**：当需要用“单次生成”补齐张数时，前端应使用并发限流（例如并发 3）同时发起请求，并维护每张图的独立状态（生成中/成功/失败/已停止），失败不阻塞后续继续尝试。
+*   **API 参数要求**：\n    *   `image`: `[layoutSketchBase64, ...referenceImages]`\n    *   `prompt`: `combinedPrompt`\n    *   `sequential_image_generation`: 当前实现固定为 `disabled`（智能布局多张由前端并发补齐）\n    *   `guidance_scale`: 当存在 `referenceImages` 时可下调（降低文本支配性，提高“看图生成”的权重）\n    *   `stream`: `false`\n    *   **取消**：支持 AbortSignal 以便用户在生成中点击“停止”中断请求
+*   **分次生成并发（必须）**：当需要补齐张数时，前端使用并发限流（例如并发 3）发起单张请求，并维护每张图的独立状态（生成中/成功/失败/已停止）；失败不阻塞后续继续尝试。
 
 *   **后端能力分级**：\n    *   **Seedream 默认（当前）**：Region Prompter 仅作为 Prompt 文本约束；空间靠 `layoutSketch`；材质靠 `referenceImages`。\n    *   **可控后端增强（未来可选）**：当后端接入支持 Area Prompting 的生成管线时，直接把 `regionPrompts[]` 作为像素级区域控制输入（Zone A 区域仅受 Prompt A 控制），显著降低串色与串属性。\n
 *   **两阶段生成（可选开关，已实现）**：用于提升强结构商品图的构图稳定性（先构图后细化）：\n    *   阶段 1（Draft）：仅用 `layoutSketch + combinedPrompt` 生成“构图草稿图”。\n    *   阶段 2（Refine）：将草稿图作为最强参考图（image[0]），再叠加原始素材图（image[1..]）生成最终图。\n    *   说明：两阶段模式下，为保证每张图都能绑定各自的草稿图，不走一次多张的 `auto` 组图返回，统一按单张并发补齐。
 
-*   **与顶部参数条的匹配（必须）**：\n    *   `model`：由顶部“模型版本”映射到具体 model id，并写入最终请求。\n    *   `size`（S1 策略）：\n        *   `ratioMode=智能比例`：根据画布宽高比推导最合适的 `size`（并用于合成草图缩放与最终请求）。\n        *   `ratioMode=固定比例/分辨率`：直接使用用户选择映射出的 `size`（如 16:9 -> 2560x1440；4.0 支持 1K/2K/4K）。\n        *   **模型校验**：不同模型可用 `size` 不同（例如 SeedEdit 3.0-i2i 仅 adaptive），前端需禁用或在请求时自动回退。\n    *   `imageCount`：智能布局模式下与顶部“张数”一致。\n        *   模型支持组图：优先使用 `auto + max_images`。\n        *   模型不支持组图或参考图限制导致单次不足：前端分次调用单张生成接口补齐到 N（允许中途失败但继续尝试）。
+*   **与顶部参数条的匹配（必须）**：\n    *   `model`：由顶部“模型版本”映射到具体 model id，并写入最终请求。\n    *   `size`（S1 策略）：\n        *   `ratioMode=智能比例`：根据画布宽高比推导最合适的 `size`（并用于合成草图缩放与最终请求）。\n        *   `ratioMode=固定比例/分辨率`：直接使用用户选择映射出的 `size`。\n        *   **模型校验**：不同模型可用 `size` 不同，前端需禁用或在请求时自动回退。\n    *   `imageCount`：智能布局模式下与顶部“张数”一致；当前实现通过前端“分次并发补齐”生成多张（并维护每张图的独立状态）。
 
 **3.4 结果回填**
-*   监听 API 返回结果。
-*   成功后，将结果图以“图层”形式叠加在 Canvas 最上层，透明度默认为 100%，允许用户调整透明度以对比原布局。
+*   监听 API 返回结果并实时更新“历史记录”槽位状态（成功/失败/已停止）。
+*   成功后在结果弹窗中展示成品图（支持预览/下载/按历史记录切换查看）；画布保持不变，便于继续微调后再次生成。
 
 ## 4. 边界条件 (Edge Cases)
 *   **图片加载失败**：在合成阶段，如果某个 Zone 的 `refImage` 加载失败，应降级为绘制色块，并记录 Warning。

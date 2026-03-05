@@ -7,7 +7,7 @@
 ## 2. 任务描述细节 (Detailed Tasks)
 
 **3.1 导航整合**
-*   修改 `src/components/MainTabs.tsx`，将 Tab 扩展为：
+*   修改 `app/src/components/MainTabs.tsx`，将 Tab 扩展为：
     *   **自由生成** (原有功能)
     *   **智能画布** (Step 3 & 4)
     *   **套图模版** (Step 5)
@@ -15,10 +15,10 @@
 
 **3.2 样式统一**
 *   **主题色**：统一使用紫色系（Violet-600）作为主色调，深灰（Zinc-900）作为背景色。
-*   **组件复用**：将 Button, Input, Card 等基础组件统一复用 `src/components/ui/` 下的 Shadcn UI 组件。
+*   **组件复用**：将 Button, Input, Card 等基础组件统一复用 `app/src/components/ui/` 下的 Shadcn UI 组件。
 
 **3.3 结果画廊升级**
-*   修改 `src/components/GeneratedGallery.tsx`。
+*   修改 `app/src/components/GeneratedGallery.tsx`。
 *   **筛选功能**：添加 Tab 栏，允许用户筛选“全部”、“套图”、“单图”。
 *   **查看大图**：点击图片弹出 Lightbox，支持左右切换和键盘操作。
 

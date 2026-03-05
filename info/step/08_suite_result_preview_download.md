@@ -11,7 +11,7 @@
 
 ## 3. 交互与功能说明
 ### 3.1 入口与打开逻辑
-- 位置：`src/components/SuiteGenerator/SuiteResultView.tsx`
+- 位置：`app/src/components/SuiteGenerator/SuiteResultView.tsx`
 - 行为：点击子项缩略图，不再直接下载，改为打开预览弹窗。
 - 默认图：弹窗默认展示被点击的那一张图。
 
@@ -36,7 +36,7 @@
 5. 套图失败项“重试”功能不受影响。
 
 ## 5. 影响范围
-- 前端组件：`src/components/SuiteGenerator/SuiteResultView.tsx`
+- 前端组件：`app/src/components/SuiteGenerator/SuiteResultView.tsx`
 - 不涉及：API 参数、任务状态结构、后端接口。
 
 ## 6. 实现备注

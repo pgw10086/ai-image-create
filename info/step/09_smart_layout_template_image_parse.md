@@ -19,7 +19,7 @@
 - `canvasSize`：使用原图宽高
 - `zones`：至少 background + main（若可识别），其余为 prop；坐标以 `bboxNormalized (0~1)` 为主，前端换算为 px 并做 clamp
 
-## 代码落点（建议）
-- 模型调用：在 `app/src/lib/api.ts` 新增“解析模板图片”方法，复用 `GoogleGenAI` 客户端与 `toInlineData()`，以 `responseModalities: ['TEXT']` 输出 JSON
-- UI 接入：在 `SmartLayoutView` 增加图片上传 input 与菜单项；解析成功后更新 `canvasSize/zones/settings`，并引导保存模板
-- 颜色与富化：沿用 `SEMANTIC_COLORS` 与 `enrichZonesForPrompt()`，保证 `bboxNormalized/locationHint/sketchColor` 一致
+## 代码落点（当前）
+- 模型调用：`app/src/lib/api.ts` 的 `parseSmartLayoutTemplateFromImage(...)`（Gemini 多模态输出 JSON，并带错误归一化）
+- UI 接入：`app/src/components/SmartLayoutView.tsx`（入口菜单 + 上传 + 解析进度 + 应用结果 + 主体候选确认 + 引导保存模板）
+- 颜色与富化：沿用 `SEMANTIC_COLORS` 与 zones 富化逻辑，保证 `bboxNormalized/locationHint/sketchColor` 一致

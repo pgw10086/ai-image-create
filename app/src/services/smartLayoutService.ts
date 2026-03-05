@@ -125,35 +125,7 @@ function buildGlobalPrompt(context?: GenerationContext) {
   });
 }
 
-function buildRegionSuffix(context?: GenerationContext) {
-  const storeContext = toStoreContext(context);
-  return buildPromptWithContext({
-    basePrompt: '',
-    context: storeContext,
-    allowText: false,
-    includeSceneHint: false,
-    includePlatformHint: false,
-    includeStyleHint: true,
-    includeLanguageHint: true,
-    includeAllowTextHint: false,
-  });
-}
-
-function buildRegionSuffixForReference(context?: GenerationContext) {
-  const storeContext = toStoreContext(context);
-  return buildPromptWithContext({
-    basePrompt: '',
-    context: storeContext,
-    allowText: false,
-    includeSceneHint: false,
-    includePlatformHint: false,
-    includeStyleHint: false,
-    includeLanguageHint: true,
-    includeAllowTextHint: false,
-  });
-}
-
-function mergeRegionPrompt(zone: LayoutZone, context?: GenerationContext, hasReferenceImage = false) {
+function mergeRegionPrompt(zone: LayoutZone, context?: GenerationContext) {
   const parts = [zone.prompt?.trim(), zone.autoCaption?.trim()].filter(Boolean) as string[];
   let merged = parts.join(', ');
   if (!merged) {
@@ -163,12 +135,7 @@ function mergeRegionPrompt(zone: LayoutZone, context?: GenerationContext, hasRef
       merged = zone.type === 'background' ? 'background' : zone.type === 'prop' ? 'prop' : 'main subject';
     }
   }
-  const suffix = hasReferenceImage ? buildRegionSuffixForReference(context) : buildRegionSuffix(context);
-  const base = suffix ? `${merged}. ${suffix}` : merged;
-  if (!hasReferenceImage) return base;
-  return context?.language === 'zh'
-    ? `${base}。外观（材质/配色/纹理/细节/光照）以对应参考图为准，若文字描述与参考图冲突则忽略冲突描述。`
-    : `${base}. Match the corresponding reference image for appearance (materials/colors/textures/details/lighting). If text conflicts with the reference image, ignore the conflicting text.`;
+  return merged;
 }
 
 function getTypeZh(type: LayoutZone['type']) {
@@ -316,8 +283,7 @@ export function composeLayoutPrompt(zones: LayoutZone[], context?: GenerationCon
         r: Math.max(0, roundInt(canvasW - (bboxPx.x + bboxPx.w))),
         b: Math.max(0, roundInt(canvasH - (bboxPx.y + bboxPx.h))),
       };
-      const hasReferenceImage = Boolean(z.refImageId || z.refImage);
-      const prompt = mergeRegionPrompt(z, context, hasReferenceImage);
+      const prompt = mergeRegionPrompt(z, context);
       const regionNo = idx + 1;
       const sketchColor = z.sketchColor || z.semanticColor || '';
       const alignRules =
@@ -338,7 +304,6 @@ export function composeLayoutPrompt(zones: LayoutZone[], context?: GenerationCon
 
   const allowText = Boolean(context?.allowText);
   const rules = [
-    'Follow COORDINATE_SYSTEM strictly for all placements.',
     allowText ? 'Do not draw borders, boxes, numbers, or labels.' : 'Do not draw borders, boxes, numbers, labels, or any text.',
     'All objects must stay strictly inside their assigned regions; they may touch region edges.',
     'Respect occlusion and depth order; no floating objects.',
@@ -443,7 +408,7 @@ export async function composeLayoutForGeneration(
         zIndex: z.zIndex,
         locationHint: getLocationHintFromPx(bbox, canvasW, canvasH),
         bbox,
-        prompt: mergeRegionPrompt(z, request.context, hasReferenceImage),
+        prompt: mergeRegionPrompt(z, request.context),
         hasReferenceImage,
       };
     });
@@ -464,7 +429,7 @@ export async function composeLayoutForGeneration(
     imageNoToRegions.set(imageNo, list.slice().sort((a, b) => a - b));
   }
   const imageRefLines = [
-    '图1：位置/构图参考图（layoutSketch），仅用于区域位置与构图，不代表材质/配色/风格。',
+    '图1：layoutSketch（位置/构图）',
     ...referenceItems.map(i => `图${i.imageNo}：参考图（${getTypeZh(i.type)}），外观真值，用于 Region ${imageNoToRegions.get(i.imageNo)?.join(',') || ''}`.trim()),
   ];
 
@@ -498,8 +463,8 @@ export async function composeLayoutForGeneration(
       const imageNo = regionNoToImageNo.get(r.regionNo);
       if (!imageNo) return '';
       return request.context?.language === 'zh'
-        ? `- Region ${r.regionNo}：外观严格参考 图${imageNo}（材质/配色/纹理/细节/光照/镜头），并保持在 bbox 内。`
-        : `- Region ${r.regionNo}: match Image ${imageNo} exactly for appearance and keep it inside bbox.`;
+        ? `- Region ${r.regionNo}：外观严格参考 图${imageNo}（材质/配色/纹理/细节/光照/镜头）。`
+        : `- Region ${r.regionNo}: match Image ${imageNo} exactly for appearance.`;
     })
     .filter(Boolean);
 
@@ -538,7 +503,6 @@ export async function composeLayoutForGeneration(
     '',
     'RULES:',
     ...[
-      'Follow COORDINATE_SYSTEM strictly for all placements.',
       allowText ? 'Do not draw borders, boxes, numbers, or labels.' : 'Do not draw borders, boxes, numbers, labels, or any text.',
       'All objects must stay strictly inside their assigned regions; they may touch region edges.',
       ...(enableDepthTree ? ['Respect occlusion and depth order; no floating objects.'] : ['No floating objects.']),
