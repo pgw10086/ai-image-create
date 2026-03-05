@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Plus, Sparkles, Send, X, Loader2 } from 'lucide-react';
+import { Plus, Sparkles, Send, X, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createEditor, Editor, Element as SlateElement, Text, Transforms } from 'slate';
 import type { Descendant, Node as SlateNode } from 'slate';
@@ -339,6 +339,8 @@ export function InputArea() {
     updateTaskStatus,
     tasks,
     generationContext,
+    singleTemplateUi,
+    toggleSingleInputCollapsed,
   } = useAppStore();
 
   const [isFocused, setIsFocused] = useState(false);
@@ -362,6 +364,8 @@ export function InputArea() {
 
   const isGenerating = tasks.some((t) => t.status === 'processing');
   const usingVariableTemplate = isVariableTemplatePreset(inputTemplatePreset);
+  const isTemplatePreviewMode = singleTemplateUi.isApplied;
+  const isPromptCollapsed = isTemplatePreviewMode && singleTemplateUi.isInputCollapsed;
 
   const compileTemplatePrompt = useCallback((nodes: Descendant[]) => {
     const serializeNode = (node: SlateNode): string => {
@@ -458,6 +462,9 @@ export function InputArea() {
       if (seq !== analyzeRequestSeqRef.current) return;
       const changed = applyTemplateVariableValues(parsed.variables);
       if (changed > 0) {
+        syncTemplatePromptToStore();
+      }
+      if (changed > 0) {
         toast.success(`AI 识图已更新 ${changed} 个模板变量`);
       } else {
         toast.message('AI 识图完成，模板变量无需更新');
@@ -469,7 +476,7 @@ export function InputArea() {
     } finally {
       if (seq === analyzeRequestSeqRef.current) setIsTemplateAnalyzing(false);
     }
-  }, [applyTemplateVariableValues, collectTemplateVariableValues, editor, inputTemplatePreset, uploadedImages]);
+  }, [applyTemplateVariableValues, collectTemplateVariableValues, editor, inputTemplatePreset, syncTemplatePromptToStore, uploadedImages]);
 
   const handleGenerate = async () => {
     const rawPrompt = usingVariableTemplate ? syncTemplatePromptToStore() : inputValue;
@@ -615,7 +622,7 @@ export function InputArea() {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onPaste={handlePaste}
-        className={`relative flex items-end gap-3 p-3 rounded-2xl bg-card/80 border transition-all duration-300 ${
+        className={`relative flex ${isPromptCollapsed ? 'items-center' : 'items-end'} gap-3 p-3 rounded-2xl bg-card/80 border transition-all duration-300 ${
           isFocused ? 'border-violet-500/50 shadow-[0_0_30px_rgba(139,92,246,0.15)]' : 'border-white/10'
         } ${isDragActive ? 'border-violet-400/70 bg-violet-500/10' : ''}`}
       >
@@ -639,8 +646,31 @@ export function InputArea() {
         </motion.button>
 
         <div className="flex-1 min-w-0">
+          {isPromptCollapsed && (
+            <button
+              type="button"
+              onClick={toggleSingleInputCollapsed}
+              className="w-full px-3 py-2 rounded-xl border border-violet-400/30 bg-gradient-to-r from-violet-600/15 to-fuchsia-600/10 hover:from-violet-600/25 hover:to-fuchsia-600/20 transition-colors flex items-center justify-between text-left"
+            >
+              <div className="min-w-0">
+                <div className="text-sm text-white/90 truncate">点击展示继续编辑模板</div>
+              </div>
+              <ChevronDown className="w-4 h-4 text-violet-200 ml-3 flex-shrink-0" />
+            </button>
+          )}
+
           {usingVariableTemplate ? (
-            <div className="px-0 py-0">
+            <div className={`${isPromptCollapsed ? 'hidden' : 'px-0 py-0'}`}>
+              {isTemplatePreviewMode && (
+                <button
+                  type="button"
+                  onClick={toggleSingleInputCollapsed}
+                  className="mb-2 inline-flex items-center gap-1 px-2 py-1 rounded-md border border-white/15 bg-black/20 text-xs text-white/70 hover:bg-black/30 hover:text-white transition-colors"
+                >
+                  <ChevronUp className="w-3.5 h-3.5" />
+                  收起模板
+                </button>
+              )}
               <Slate
                 editor={editor}
                 initialValue={templateInitialValue}
@@ -652,7 +682,7 @@ export function InputArea() {
                     setIsFocused(false);
                     syncTemplatePromptToStore();
                   }}
-                  placeholder={inputTemplatePreset === 'hair-organizer' ? '编辑发饰置物架模板描述...' : '编辑商品详情图模板描述...'}
+                  placeholder={inputTemplatePreset === 'hair-organizer' ? '编辑宣传海报图模板描述...' : '编辑商品详情图模板描述...'}
                   className="min-h-16 text-white placeholder:text-white/35"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -664,20 +694,22 @@ export function InputArea() {
               </Slate>
             </div>
           ) : (
-            <Textarea
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onFocus={() => setIsFocused(true)}
-              onBlur={() => setIsFocused(false)}
-              placeholder="请输入产品名、卖点和场景；如：无线耳机，主动降噪，地铁上使用\n支持多行描述，按 Ctrl/Cmd + Enter 发送"
-              className="min-h-14 max-h-40 bg-transparent border-0 shadow-none px-0 py-2 text-white placeholder:text-white/40 text-base leading-6 resize-none focus-visible:ring-0"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                  e.preventDefault();
-                  void handleGenerate();
-                }
-              }}
-            />
+            !isPromptCollapsed && (
+              <Textarea
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onFocus={() => setIsFocused(true)}
+                onBlur={() => setIsFocused(false)}
+                placeholder="请输入产品名、卖点和场景；如：无线耳机，主动降噪，地铁上使用\n支持多行描述，按 Ctrl/Cmd + Enter 发送"
+                className="min-h-14 max-h-40 bg-transparent border-0 shadow-none px-0 py-2 text-white placeholder:text-white/40 text-base leading-6 resize-none focus-visible:ring-0"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    void handleGenerate();
+                  }
+                }}
+              />
+            )
           )}
         </div>
 

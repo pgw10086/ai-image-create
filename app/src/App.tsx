@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { useEffect, useState } from 'react';
 import { Toaster } from '@/components/ui/sonner';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -29,8 +30,14 @@ ensureDefaultSmartLayoutTemplatesImported({
 });
 
 function App() {
-  const { activeTab, domesticMode, smartLayoutFocusMode } = useAppStore();
+  const { activeTab, domesticMode, smartLayoutFocusMode, singleTemplateUi } = useAppStore();
   const isSmartLayoutFocus = activeTab === 'smart_layout' && smartLayoutFocusMode;
+  const isSingleTemplateSplitLayout = domesticMode === 'single' && singleTemplateUi.isApplied;
+  const [isPreviewImageBroken, setIsPreviewImageBroken] = useState(false);
+
+  useEffect(() => {
+    setIsPreviewImageBroken(false);
+  }, [singleTemplateUi.previewImage]);
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -75,17 +82,50 @@ function App() {
             <>
               <DomesticModeSwitch />
 
-              {/* Input Area */}
-              {domesticMode === 'single' ? <InputArea /> : <SuiteGeneratorView />}
+              {domesticMode === 'single' ? (
+                <>
+                  {isSingleTemplateSplitLayout ? (
+                    <div className="mt-4 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-4 items-start">
+                      <div className="min-w-0">
+                        <InputArea />
+                        <FeatureTags />
+                        <GeneratedGallery />
+                      </div>
 
-              {/* Feature Tags */}
-              {domesticMode === 'single' ? <FeatureTags /> : null}
-
-              {/* Generated Gallery */}
-              {domesticMode === 'single' ? <GeneratedGallery /> : <SuiteResultView />}
-
-              {/* Case Gallery */}
-              {domesticMode === 'single' ? <CaseGallery /> : null}
+                      <aside className="rounded-2xl border border-violet-400/20 bg-gradient-to-br from-violet-600/10 via-card/80 to-card/60 p-4 xl:sticky xl:top-24">
+                        <div className="text-xs uppercase tracking-wide text-violet-200/80">模板效果图</div>
+                        <div className="mt-1 text-white/90 font-medium truncate">{singleTemplateUi.previewTitle || '模板预览'}</div>
+                        <div className="mt-3 rounded-xl border border-white/10 bg-black/30 overflow-hidden aspect-[4/3]">
+                          {singleTemplateUi.previewImage && !isPreviewImageBroken ? (
+                            <img
+                              src={singleTemplateUi.previewImage}
+                              alt={singleTemplateUi.previewTitle || '模板效果图'}
+                              className="w-full h-full object-cover"
+                              onError={() => setIsPreviewImageBroken(true)}
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-sm text-white/50">
+                              模板预览不可用
+                            </div>
+                          )}
+                        </div>
+                      </aside>
+                    </div>
+                  ) : (
+                    <>
+                      <InputArea />
+                      <FeatureTags />
+                      <GeneratedGallery />
+                    </>
+                  )}
+                  <CaseGallery />
+                </>
+              ) : (
+                <>
+                  <SuiteGeneratorView />
+                  <SuiteResultView />
+                </>
+              )}
             </>
           )}
         </motion.div>

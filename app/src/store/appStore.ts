@@ -196,6 +196,14 @@ export interface GenerationContext {
   scene?: string;
 }
 
+export interface SingleTemplateUiState {
+  isApplied: boolean;
+  previewImage: string | null;
+  previewTitle: string;
+  isInputCollapsed: boolean;
+  appliedAt: number | null;
+}
+
 export interface AppState {
   // Active tab
   activeTab: 'detail' | 'single' | 'smart_layout';
@@ -212,6 +220,10 @@ export interface AppState {
   setInputValue: (value: string) => void;
   inputTemplatePreset: 'none' | 'bow-detail' | 'hair-organizer';
   setInputTemplatePreset: (preset: 'none' | 'bow-detail' | 'hair-organizer') => void;
+  singleTemplateUi: SingleTemplateUiState;
+  applySingleTemplatePreview: (payload: { image: string; title: string }) => void;
+  toggleSingleInputCollapsed: () => void;
+  clearSingleTemplatePreview: () => void;
   
   // Active tags
   activeTags: string[];
@@ -261,6 +273,41 @@ export const useAppStore = create<AppState>()(
       setInputValue: (value) => set({ inputValue: value }),
       inputTemplatePreset: 'none',
       setInputTemplatePreset: (preset) => set({ inputTemplatePreset: preset }),
+      singleTemplateUi: {
+        isApplied: false,
+        previewImage: null,
+        previewTitle: '',
+        isInputCollapsed: false,
+        appliedAt: null,
+      },
+      applySingleTemplatePreview: ({ image, title }) =>
+        set({
+          singleTemplateUi: {
+            isApplied: true,
+            previewImage: image || null,
+            previewTitle: title || '',
+            isInputCollapsed: true,
+            appliedAt: Date.now(),
+          },
+        }),
+      toggleSingleInputCollapsed: () =>
+        set((state) => ({
+          singleTemplateUi: {
+            ...state.singleTemplateUi,
+            isInputCollapsed: !state.singleTemplateUi.isInputCollapsed,
+          },
+        })),
+      clearSingleTemplatePreview: () =>
+        set((state) => ({
+          singleTemplateUi: {
+            ...state.singleTemplateUi,
+            isApplied: false,
+            previewImage: null,
+            previewTitle: '',
+            isInputCollapsed: false,
+            appliedAt: null,
+          },
+        })),
       
       // Tags
       activeTags: ['detail', 'amazon', 'english'],

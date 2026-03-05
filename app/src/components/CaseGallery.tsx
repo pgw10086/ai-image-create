@@ -57,18 +57,28 @@ const templates: TemplateItem[] = [
 
 export function CaseGallery() {
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateItem | null>(null);
-  const { setInputValue, setInputTemplatePreset, addTask, updateTaskStatus } = useAppStore();
+  const {
+    setInputValue,
+    setInputTemplatePreset,
+    applySingleTemplatePreview,
+    updateGenerationContext,
+    addTask,
+    updateTaskStatus,
+  } = useAppStore();
 
   const handleUseTemplate = (template: TemplateItem) => {
     setSelectedTemplate(null);
     if (template.id === 'bow-detail-template') {
       setInputTemplatePreset('bow-detail');
+      applySingleTemplatePreview({ image: template.image, title: template.title });
       toast.success('已加载商品详情图变量模板');
       return;
     }
     if (template.id === 'hair-organizer-template') {
       setInputTemplatePreset('hair-organizer');
-      toast.success('已加载发饰置物架变量模板');
+      applySingleTemplatePreview({ image: template.image, title: template.title });
+      updateGenerationContext({ ratioMode: '16:9' });
+      toast.success('已加载宣传海报图变量模板');
       return;
     }
     setInputTemplatePreset('none');
