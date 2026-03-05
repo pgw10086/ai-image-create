@@ -333,7 +333,6 @@ export function InputArea() {
     inputValue,
     setInputValue,
     inputTemplatePreset,
-    setInputTemplatePreset,
     uploadedImages,
     removeUploadedImage,
     addTask,
@@ -540,8 +539,9 @@ export function InputArea() {
           })),
         });
         toast.success('图片生成成功！');
-        setInputTemplatePreset('none');
-        setInputValue('');
+        if (!usingVariableTemplate) {
+          setInputValue('');
+        }
       } else {
         const errorMsg = response.error?.message || response.message || '生成失败，请重试';
         updateTaskStatus(newTask.id, 'failed', errorMsg);

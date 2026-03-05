@@ -85,7 +85,7 @@ function App() {
               {domesticMode === 'single' ? <GeneratedGallery /> : <SuiteResultView />}
 
               {/* Case Gallery */}
-              <CaseGallery />
+              {domesticMode === 'single' ? <CaseGallery /> : null}
             </>
           )}
         </motion.div>
